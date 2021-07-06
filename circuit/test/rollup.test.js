@@ -51,8 +51,6 @@ class Rollup {
 	   this.nullifiers = await smt.newMemEmptyTrie();
 	}
 	var input = {
-		hashInputs : 0n,
-
 		nVotes: votes.length,
 		oldNullifiersRoot: this.nullifiers.root,
 		newNullifiersRoot: 0n,
@@ -119,16 +117,6 @@ class Rollup {
 
 	input.result = result;
 
-	var hash = crypto.createHash('sha256');
-	hash.update(ffutils.leInt2Buff(input.oldNullifiersRoot,32));
-	hash.update(ffutils.leInt2Buff(input.newNullifiersRoot,32));
-	hash.update(ffutils.leInt2Buff(input.result,32));
-
-	for (var n = 0; n<votes.length; n++){
-		hash.update(ffutils.leInt2Buff(votes[n].votePbkAx),32);
-	}
-	input.hashInputs = ffutils.leBuff2int(hash.digest());
-	
 	return input;
     }	    
 }
@@ -166,7 +154,9 @@ describe("dummy", function () {
 		await V1.vote(10000n),
 	]);
 	const w = await circuit.calculateWitness(input, { logTrigger:false, logOutput: false, logSet: false });
-	await circuit.checkConstraints(w); 
+	await circuit.checkConstraints(w);
+	const hashInputs = w[1];
+	console.log(hashInputs);
     });
 
     it("1 batch, 2 votes, batchSize 2", async () => {

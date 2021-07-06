@@ -9,14 +9,36 @@ include "../node_modules/circomlib/circuits/sha256/sha256.circom";
 
 template VoteRollup(nBatchSize, nLevels) {
 
-	signal input hashInputs;
+	/*
+	contract Rollup {
+		bytes32 nullifiersRoot;
+		uint256 result;
+		uint256 voteCount;
+		function add(_newNullifiersRoot, _result, _nVotes, _votePbkAx[], _proof) {
+			hashInputs = sha256(abi.encodePacked(
+				_nullifiersRoot,
+				_newNullifiersRoot,
+				_root,
+				_nVotes,
+				_votePbkAx
+			));
+			verifySnark(proof, hashInputs);	
+			nullifiersRoot = _newNullifiersRoot;
+			result += _result;
+			voteCount += voteCount; 	
+		} 
+	}
+	*/
 
-	signal private input oldNullifiersRoot;
+	signal output hashInputs;
+
+	// this will be the inputs of the smartcontract verifier method
 	signal private input newNullifiersRoot;
 	signal private input result;
 	signal private input nVotes;
-	
 	signal private input votePbkAx[nBatchSize]; 
+
+	signal private input oldNullifiersRoot;
 	signal private input votePbkAy[nBatchSize];
 	signal private input voteSigS[nBatchSize];
 	signal private input voteSigR8x[nBatchSize];
@@ -27,7 +49,6 @@ template VoteRollup(nBatchSize, nLevels) {
 	signal private input voteOldValue[nBatchSize];
 	signal private input voteIsOld0[nBatchSize];
 
-/*	
     	/// check sha256 of inputs ------------------------------------------------
 	var offset = 0;
 	component inputsHasher = Sha256(256 * (4 + nBatchSize));
@@ -45,38 +66,38 @@ template VoteRollup(nBatchSize, nLevels) {
         	inputsHasher.in[offset + b] <== n2bNewNullifiersRoot.out[b];
     	}
 	offset += 256;
-
+	
     	component n2bResult = Num2Bits(256);
 	n2bResult.in <== result;
 	for (var b = 0; b < 256; b++) {
         	inputsHasher.in[offset + b] <== n2bResult.out[b];
     	}
 	offset += 256;
-
-   	component n2bBatchSize = Num2Bits(256);
-	n2bBatchSize.in <== batchSize;
+	
+   	component n2bVotes = Num2Bits(256);
+	n2bVotes.in <== nVotes;
 	for (var b = 0; b < 256; b++) {
-        	inputsHasher.in[offset + b] <== n2bBatchSize.out[b];
+        	inputsHasher.in[offset + b] <== n2bVotes.out[b];
     	}
 	offset += 256;
-
+	
 	component n2bVotePbkAx[nBatchSize];
 	for (var i = 0; i< nBatchSize ; i++) {
 		n2bVotePbkAx[i] = Num2Bits(256);
-		n2bVotePbkAx.in <== votePbkAx[i];
+		n2bVotePbkAx[i].in <== votePbkAx[i];
 		for (var b=0;b<256;b++) {
         		inputsHasher.in[offset + b] <== n2bVotePbkAx[i].out[b];
 		}
 		offset += 256
 	}
-
-   	component n2bHashInputsOut = Bits2Num(256);
-    	for (var i = 0; i < 256; i++) {
-        	n2bHashInputsOut.in[i] <== inputsHasher.out[255-i];
+	
+   	component b2nHashInputsOut = Bits2Num(256);
+	for (var i = 0; i < 256; i++) {
+        	b2nHashInputsOut.in[i] <== inputsHasher.out[255-i];
     	}
 
-	hashInputs === n2bHashInputsOut.out; 
-*/
+	hashInputs <== b2nHashInputsOut.out; 
+
 	/// check votes -------------------------------------------------------------- 
 	var computedResult = 0;
 	
@@ -135,6 +156,4 @@ template VoteRollup(nBatchSize, nLevels) {
 	}
 
 	result === computedResult;
-
 }
-
