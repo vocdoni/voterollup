@@ -5,8 +5,8 @@
   "description": "voterollup",
   "scripts": {
     "setup": "npm i",
-    "eslint": "npx eslint test/** tools/*.js tools/helpers/*.js",
-    "test": "npx mocha --max-old-space-size=4096 ./test/*.test.js && npx mocha ./test/lib/*.test.js"
+    "eslint": "npx eslint test/**",
+    "test": "npx mocha --max-old-space-size=4096 ./test/*.test.js"
   },
   "author": "AragonLabs",
   "license": "AGPL-3.0",

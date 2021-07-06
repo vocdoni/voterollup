@@ -7,24 +7,30 @@ include "../node_modules/circomlib/circuits/smt/smtprocessor.circom";
 include "../node_modules/circomlib/circuits/eddsaposeidon.circom";
 include "../node_modules/circomlib/circuits/sha256/sha256.circom";
 
-template VoteRollup(nVotes, nLevels) {
-	signal output hashInputs;
+template VoteRollup(nBatchSize, nLevels) {
+
+	signal input hashInputs;
 
 	signal private input oldNullifiersRoot;
 	signal private input newNullifiersRoot;
 	signal private input result;
-
-	signal private input votePbkAx[nVotes]; // this acts as a nullifier
-	signal private input votePbkAy[nVotes];
-	signal private input voteSigS[nVotes];
-	signal private input voteSigR8x[nVotes];
-	signal private input voteSigR8y[nVotes];
-	signal private input voteValue[nVotes];
-	signal private input voteNullifierSiblings[nVotes][nLevels+1];
+	signal private input nVotes;
 	
+	signal private input votePbkAx[nBatchSize]; 
+	signal private input votePbkAy[nBatchSize];
+	signal private input voteSigS[nBatchSize];
+	signal private input voteSigR8x[nBatchSize];
+	signal private input voteSigR8y[nBatchSize];
+	signal private input voteValue[nBatchSize];
+	signal private input voteNullifierSiblings[nBatchSize][nLevels+1];
+	signal private input voteOldKey[nBatchSize];
+	signal private input voteOldValue[nBatchSize];
+	signal private input voteIsOld0[nBatchSize];
+
+/*	
     	/// check sha256 of inputs ------------------------------------------------
 	var offset = 0;
-	component inputsHasher = Sha256(256 * (3 + nVotes));
+	component inputsHasher = Sha256(256 * (4 + nBatchSize));
 
     	component n2bOldNullifiersRoot = Num2Bits(256);
 	n2bOldNullifiersRoot.in <== oldNullifiersRoot;
@@ -47,8 +53,15 @@ template VoteRollup(nVotes, nLevels) {
     	}
 	offset += 256;
 
-	component n2bVotePbkAx[nVotes];
-	for (var i = 0; i< nVotes ; i++) {
+   	component n2bBatchSize = Num2Bits(256);
+	n2bBatchSize.in <== batchSize;
+	for (var b = 0; b < 256; b++) {
+        	inputsHasher.in[offset + b] <== n2bBatchSize.out[b];
+    	}
+	offset += 256;
+
+	component n2bVotePbkAx[nBatchSize];
+	for (var i = 0; i< nBatchSize ; i++) {
 		n2bVotePbkAx[i] = Num2Bits(256);
 		n2bVotePbkAx.in <== votePbkAx[i];
 		for (var b=0;b<256;b++) {
@@ -62,19 +75,30 @@ template VoteRollup(nVotes, nLevels) {
         	n2bHashInputsOut.in[i] <== inputsHasher.out[255-i];
     	}
 
-	hashInputs <== n2bHashInputsOut.out; 
-
+	hashInputs === n2bHashInputsOut.out; 
+*/
 	/// check votes -------------------------------------------------------------- 
 	var computedResult = 0;
-	component sigVerification[nVotes];
-	component processor[nVotes];
 	
-	for (var i=0; i<nVotes; i++) {
-		
+	component sigVerification[nBatchSize];
+	component processor[nBatchSize];
+	component verify[nBatchSize];
+	component isLast[nBatchSize];
+	component lastRootEqual[nBatchSize];
+	
+	for (var i=0; i<nBatchSize; i++) {
+		verify[i] = LessThan(32);
+		verify[i].in[0] <== i; 
+		verify[i].in[1] <== nVotes; 
+
+		isLast[i] = IsEqual();
+		isLast[i].in[0] <== i; 
+		isLast[i].in[1] <== nVotes - 1; 
+
 		/// verify vote signature
 		////////////////
 		sigVerification[i] = EdDSAPoseidonVerifier();
-		sigVerification[i].enabled <== 1;
+		sigVerification[i].enabled <==  verify[i].out;
 		sigVerification[i].Ax <== votePbkAx[i];
 		sigVerification[i].Ay <== votePbkAy[i];
 		sigVerification[i].S <== voteSigS[i];
@@ -84,28 +108,33 @@ template VoteRollup(nVotes, nLevels) {
 
 		/// verify addition into nullifier tree
 	 	////////////////	
+
 		processor[i] = SMTProcessor(nLevels+1);
+		
 		if (i==0) {
 			processor[i].oldRoot <== oldNullifiersRoot;
 		} else {
 			processor[i].oldRoot <== processor[i-1].newRoot;
 		}
-		for (var n=0;n<nLevels;n++) {
-			processor[i].siblings[i] <== voteNullifierSiblings[i][n];
+		for (var n=0;n<nLevels+1;n++) {
+			processor[i].siblings[n] <== voteNullifierSiblings[i][n];
 		}
-		processor[i].fnc[0] <== 1;
+		processor[i].fnc[0] <== verify[i].out;
 		processor[i].fnc[1] <== 0;
-		processor[i].oldKey <== 0;
-		processor[i].oldValue <== 0;
+		processor[i].oldKey <== voteOldKey[i];
+		processor[i].oldValue <== voteOldValue[i];
+		processor[i].isOld0 <== voteIsOld0[i];
 		processor[i].newKey <== votePbkAx[i];
 		processor[i].newValue <== 0;
-		// not sure if we have to check if processor[i].oldRoot != processor[i].newRoot
-	
-		/// update result
-		//////////////////
-		computedResult = computedResult + voteValue[i];	
-
+		
+		lastRootEqual[i] = ForceEqualIfEnabled();
+		lastRootEqual[i].enabled <== isLast[i].out;
+		lastRootEqual[i].in[0] <== processor[i].newRoot;
+		lastRootEqual[i].in[1] <== newNullifiersRoot;
+		computedResult = computedResult + voteValue[i];
 	}
+
 	result === computedResult;
-	newNullifiersRoot <== processor[nVotes-1].newRoot;
-} 
+
+}
+
