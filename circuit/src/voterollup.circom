@@ -8,28 +8,6 @@ include "../node_modules/circomlib/circuits/eddsaposeidon.circom";
 include "../node_modules/circomlib/circuits/sha256/sha256.circom";
 
 template VoteRollup(nBatchSize, nLevels) {
-
-	/*
-	contract Rollup {
-		bytes32 nullifiersRoot;
-		uint256 result;
-		uint256 voteCount;
-		function add(_newNullifiersRoot, _result, _nVotes, _votePbkAx[], _proof) {
-			hashInputs = sha256(abi.encodePacked(
-				_nullifiersRoot,
-				_newNullifiersRoot,
-				_root,
-				_nVotes,
-				_votePbkAx
-			));
-			verifySnark(proof, hashInputs);	
-			nullifiersRoot = _newNullifiersRoot;
-			result += _result;
-			voteCount += voteCount; 	
-		} 
-	}
-	*/
-
 	signal output hashInputs;
 
 	// this will be the inputs of the smartcontract verifier method
