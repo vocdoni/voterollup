@@ -17,6 +17,7 @@
     "hardhat": "^2.4.1"
   },
   "dependencies": {
+    "@aragon/evm-storage-proofs": "^0.1.0",
     "circom": "^0.5.45",
     "snarkjs": "^0.4.6"
   }

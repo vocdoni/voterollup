@@ -9,6 +9,8 @@ contract VoteRollup is Verifier {
   uint256 public result;   
   uint256 public count;
 
+  event Challanged();
+	
   using StorageProof for StorageProof;
 
   mapping(address=>bytes32) keys;
@@ -54,6 +56,8 @@ contract VoteRollup is Verifier {
 
 	// check that the voter exists in the nullifiers
 	// require(verifierProof2(bbkPbkX, nullifierRoot, _proofA, _proofB, _proofC); 
+  
+        emit Challanged();
   }
 }
 
