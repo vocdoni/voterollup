@@ -22,7 +22,7 @@ describe("dummy", function () {
         `;
 
         fs.writeFileSync(circuitPath, circuitCode, "utf8");
-
+	console.log(circuitPath);
         circuit = await tester(circuitPath, {reduceConstraints:false});
         await circuit.loadConstraints();
         console.log("Constraints: " + circuit.constraints.length + "\n");
@@ -33,6 +33,8 @@ describe("dummy", function () {
     });
 
     it("1 batch, 1 vote, batchSize 2", async () => {
+	console.log(V1.vote(10000n)); 
+
 	let rollup = new Rollup(2,2);
 	let input = await rollup.rollup([
 		await V1.vote(10000n),
@@ -40,7 +42,7 @@ describe("dummy", function () {
 	const w = await circuit.calculateWitness(input, { logTrigger:false, logOutput: false, logSet: false });
 	await circuit.checkConstraints(w);
 	const hashInputs = w[1];
-	console.log(hashInputs);
+	console.log("inputsHash=",hashInputs);
     });
 
     it("1 batch, 2 votes, batchSize 2", async () => {
@@ -54,7 +56,6 @@ describe("dummy", function () {
     });
 
     it("2 batches, 3 votes, batchSize 2", async () => {
-
 	let rollup = new Rollup(2,2);
 	let input1 = await rollup.rollup([
 		await V1.vote(10000n),

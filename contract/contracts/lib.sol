@@ -528,7 +528,7 @@ library TrieProof {
     }
 }
 
-library StorageProof {
+contract StorageProof {
 
    uint8 private constant ACCOUNT_STORAGE_ROOT_INDEX = 2;
 

@@ -2,16 +2,20 @@
 pragma solidity ^0.6.0;
 
 import { Verifier } from "../circuits/release/verifier.sol";
-import { StorageProof } from "./lib.sol";
+//import { StorageProof } from "./lib.sol";
 
 contract VoteRollup is Verifier {
   bytes32 public nullifierRoot;
   uint256 public result;   
   uint256 public count;
 
+    // Modulus zkSNARK
+    uint256 constant _RFIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
   event Challanged();
-	
-  using StorageProof for StorageProof;
+  event InputsHash(uint);
+  event Inputs(bytes);
+//  using StorageProof for StorageProof;
 
   mapping(address=>bytes32) keys;
 
@@ -24,14 +28,24 @@ contract VoteRollup is Verifier {
 		   uint[2] calldata _proofA, uint[2][2] calldata _proofB, uint[2] calldata _proofC) external {
   	
       uint[1] memory inputValues;
-      inputValues[0] = uint(sha256(abi.encodePacked(nullifierRoot, _nullifierRoot, _result, _count, _voters)));
+      // inputValues[0] = uint(sha256(abi.encodePacked(nullifierRoot, _nullifierRoot, _result, _count, _voters)));
+
+      bytes memory packed = abi.encodePacked(nullifierRoot,_nullifierRoot,_result,_count,_voters);
+       uint256 input = uint256(
+            sha256(packed)
+       ) % _RFIELD;
+
+      inputValues[0] = input;
+     
+      emit InputsHash(input);
+      emit Inputs(packed);
       require(verifyProof(_proofA, _proofB, _proofC, inputValues), "invalid-proof");
 
       result += _result;
       count += _count;
       nullifierRoot = _nullifierRoot;
   }
- 
+ /*
   function challange_not_in_census(
   	// ERC20 proof
 	address _voter,
@@ -59,6 +73,7 @@ contract VoteRollup is Verifier {
   
         emit Challanged();
   }
+*/
 }
 
 

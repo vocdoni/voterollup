@@ -1,0 +1,21 @@
+{
+  "name": "q_n_d",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "circom": "^0.5.45",
+    "circom_runtime": "^0.1.12",
+    "cors": "^2.8.5",
+    "ethers": "^5.4.1",
+    "express": "^4.17.1",
+    "morgan": "^1.10.0",
+    "snarkjs": "^0.4.6",
+    "solc": "^0.6.12"
+  }
+}

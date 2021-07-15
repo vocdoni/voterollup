@@ -26,58 +26,58 @@ template VoteRollup(nBatchSize, nLevels) {
 	signal private input voteOldKey[nBatchSize];
 	signal private input voteOldValue[nBatchSize];
 	signal private input voteIsOld0[nBatchSize];
-
-    	/// check sha256 of inputs ------------------------------------------------
+    	
+	/// check sha256 of inputs ------------------------------------------------
 	var offset = 0;
 	component inputsHasher = Sha256(256 * (4 + nBatchSize));
 
     	component n2bOldNullifiersRoot = Num2Bits(256);
 	n2bOldNullifiersRoot.in <== oldNullifiersRoot;
 	for (var b = 0; b < 256; b++) {
-        	inputsHasher.in[offset + b] <== n2bOldNullifiersRoot.out[b];
-    	}
+        	inputsHasher.in[offset + b] <== n2bOldNullifiersRoot.out[255-b];
+	}
 	offset += 256;
-
+	
     	component n2bNewNullifiersRoot = Num2Bits(256);
 	n2bNewNullifiersRoot.in <== newNullifiersRoot;
 	for (var b = 0; b < 256; b++) {
-        	inputsHasher.in[offset + b] <== n2bNewNullifiersRoot.out[b];
+        	inputsHasher.in[offset + b] <== n2bNewNullifiersRoot.out[255-b];
     	}
 	offset += 256;
-	
+
     	component n2bResult = Num2Bits(256);
 	n2bResult.in <== result;
 	for (var b = 0; b < 256; b++) {
-        	inputsHasher.in[offset + b] <== n2bResult.out[b];
+        	inputsHasher.in[offset + b] <== n2bResult.out[255-b];
     	}
 	offset += 256;
 	
    	component n2bVotes = Num2Bits(256);
 	n2bVotes.in <== nVotes;
 	for (var b = 0; b < 256; b++) {
-        	inputsHasher.in[offset + b] <== n2bVotes.out[b];
+        	inputsHasher.in[offset + b] <== n2bVotes.out[255-b];
     	}
 	offset += 256;
-	
+        	
 	component n2bVotePbkAx[nBatchSize];
 	for (var i = 0; i< nBatchSize ; i++) {
 		n2bVotePbkAx[i] = Num2Bits(256);
 		n2bVotePbkAx[i].in <== votePbkAx[i];
 		for (var b=0;b<256;b++) {
-        		inputsHasher.in[offset + b] <== n2bVotePbkAx[i].out[b];
+        		inputsHasher.in[offset + b] <== n2bVotePbkAx[i].out[255-b];
 		}
 		offset += 256
 	}
-	
+        	
    	component b2nHashInputsOut = Bits2Num(256);
 	for (var i = 0; i < 256; i++) {
         	b2nHashInputsOut.in[i] <== inputsHasher.out[255-i];
     	}
-
 	hashInputs <== b2nHashInputsOut.out; 
 
 	/// check votes -------------------------------------------------------------- 
-	var computedResult = 0;
+	
+        var computedResult = 0;
 	
 	component sigVerification[nBatchSize];
 	component processor[nBatchSize];
@@ -134,4 +134,5 @@ template VoteRollup(nBatchSize, nLevels) {
 	}
 
 	result === computedResult;
+		
 }
