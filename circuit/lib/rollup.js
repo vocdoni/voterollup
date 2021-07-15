@@ -41,6 +41,16 @@ class Rollup {
        this.batchSize = batchSize;
        this.levels = levels;
     }
+    async smtkeyexists(key) {
+	
+	let siblings = (await this.nullifiers.find(key)).siblings;
+    	while (siblings.length < this.levels+1) siblings.push(BigInt(0));
+	return {
+		root : this.nullifiers.root,
+		siblings,
+		key
+	}
+    }
     async rollup(votes) {
 	assert(votes.length <= this.batchSize);
 	if (this.nullifiers == null) {

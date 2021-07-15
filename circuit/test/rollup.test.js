@@ -5,7 +5,7 @@ const tester = require("circom").tester;
 const { assert } = require("chai");
 const { Voter, Rollup } = require("../lib/rollup.js");
 
-describe("dummy", function () {
+describe("Test rollup", function () {
     this.timeout(0);
 
     const V1 = new Voter("0000000000000000000000000000000000000000000000000000000000000001");  
@@ -22,7 +22,6 @@ describe("dummy", function () {
         `;
 
         fs.writeFileSync(circuitPath, circuitCode, "utf8");
-	console.log(circuitPath);
         circuit = await tester(circuitPath, {reduceConstraints:false});
         await circuit.loadConstraints();
         console.log("Constraints: " + circuit.constraints.length + "\n");
@@ -33,8 +32,6 @@ describe("dummy", function () {
     });
 
     it("1 batch, 1 vote, batchSize 2", async () => {
-	console.log(V1.vote(10000n)); 
-
 	let rollup = new Rollup(2,2);
 	let input = await rollup.rollup([
 		await V1.vote(10000n),
