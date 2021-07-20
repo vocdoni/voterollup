@@ -20,7 +20,6 @@ const rollupZkeyFile = "../../contract/circuits/release/rollup.zkey";
 const smtKeyExistsWasmFile = "../../contract/circuits/release/smtkeyexists.wasm";	
 const smtKeyExistsZkeyFile = "../../contract/circuits/release/smtkeyexists.zkey";
 
-
 const erc20abi = `[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"spender","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"spender","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transferFrom","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"}]`;
 
 const VoteRollup = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
@@ -30,16 +29,15 @@ const wallet = new ethers.Wallet("0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a8
 const wallet2 = new ethers.Wallet("0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976e", provider)    
 const wallet3 = new ethers.Wallet("0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976f", provider)    
 const factory = ethers.ContractFactory.fromSolidity(VoteRollup,wallet);
-const factory2 = ethers.ContractFactory.fromSolidity(VoteRollup,wallet2);
-const factory3 = ethers.ContractFactory.fromSolidity(VoteRollup,wallet);
 let rollupContract; 
 
 const tokenAddress =    "0x81A99588B326679E2fbc2768F81622B62ed70033";
-const balancePositionIdx = 0;
-const blockNumber = 8959397;
-const erc20Contract = new ethers.Contract(tokenAddress, erc20abi, wallet);
+const tokenSlot= 0;
+const tokenBlockNumber = 8959397;
+const tokenERC20 = new ethers.Contract(tokenAddress, erc20abi, wallet);
 
 let roll = new rollup.Rollup(4,10);
+let rollEntries = [];
 
 let vote1 = {
   address: wallet.address,
@@ -80,9 +78,6 @@ function b256(n) {
 
 async function do_deploy() {
     console.log("deploying contract...");
-    let tokenAddress = "0x0ebe88c216a7eaff0ae46ce01fd685303c4797bd";
-    let tokenSlot = 0;
-    let tokenBlockNumber = 8942234;
     rollupContract = await factory.deploy(
 	    tokenAddress,
 	    tokenSlot,
@@ -94,15 +89,13 @@ async function do_deploy() {
 }
 
 async function do_rollup(votes) {
+    rollEntries.push(...Array.from(votes, v => v.votePbkAx));
     let input = await roll.rollup(votes);
     let proof = await snarkjs.groth16.fullProve(input,rollupWasmFile,rollupZkeyFile /*, new logger()*/ );
-    let callData = await snarkjs.groth16.exportSolidityCallData(proof.proof, proof.publicSignals);
     
     let addrs = Array.from(votes, v => v.address );
     while (addrs.length < roll.batchSize) addrs.push("0x0000000000000000000000000000000000000000"); 
    
-    console.log(addrs);
-
     console.log("sending rollup tx...");
       
     let tx = await rollupContract.collect(
@@ -120,25 +113,37 @@ async function do_rollup(votes) {
 }
 
 async function getStorageProof(holderAddress) {
-	const balanceSlot = ERC20Prover.getHolderBalanceSlot(holderAddress, balancePositionIdx)
-	const storageProover = new ERC20Prover(web3Url)
-	const data = await storageProover.getProof(tokenAddress, [balanceSlot], blockNumber, true)
+   const balanceSlot = ERC20Prover.getHolderBalanceSlot(holderAddress, tokenSlot)
+   const storageProover = new ERC20Prover(web3Url)
+   const data = await storageProover.getProof(tokenAddress, [balanceSlot], tokenBlockNumber, false)
 
-	return data;
-	const { proof, block, blockHeaderRLP, accountProofRLP, storageProofsRLP } = data
-        console.log(data);	
+   return data;
+   const { proof, block, blockHeaderRLP, accountProofRLP, storageProofsRLP } = data
+   console.log(data);	
 }
 
-async function do_challange(bbjPbk, ethAddress) {
-    const storageProof = getStorageProof(ethAddress);
-    const root = rollupContract.nullifiersRoot();
+async function do_challange(rollEntriesNew, ethAddress) {
+   console.log("CHALLANGE addr ",ethAddress, " balance is zero");	
+  
+   let roll2 = new rollup.Rollup(roll.batchSize, roll.levels);
+   await roll2.insert(rollEntries);
+   await roll2.insert(rollEntriesNew);
+   
+   const storageProof = await getStorageProof(ethAddress);
+   const root = BigInt(await rollupContract.nullifierRoot());
+    
+   if (root != roll2.nullifiers.root) {
+       console.log("UNABLE TO CHALLANGE, ROOT IS NOT UPDATED");
+       return;
+   }
 
-    let input = await roll.smtKeyExists(bbjPbk);
-    let proof = await snarkjs.groth16.fullProve(input,smtKeyExistsWasmFile,smtKeyExistsZkeyFile/*, new logger()*/ );
-    let callData = await snarkjs.groth16.exportSolidityCallData(proof.proof, proof.publicSignals);
-
-    console.log("sending rollup tx...");
-    let tx = await rollupContract.challange(
+   console.log("generating challange proof...");
+   let bbjPbk = await rollupContract.keys(ethAddress) ;
+   let input = await roll2.smtkeyexists(bbjPbk);
+   let proof = await snarkjs.groth16.fullProve(input,smtKeyExistsWasmFile,smtKeyExistsZkeyFile/*, new logger()*/ );
+   
+   console.log("sending challange tx...");
+   let tx = await rollupContract.challange(
 	ethAddress,
 	storageProof.blockHeaderRLP,
 	storageProof.accountProofRLP,
@@ -151,34 +156,36 @@ async function do_challange(bbjPbk, ethAddress) {
     let res = await tx.wait();
     console.log("challange tx mined");
 }
-/*
-async function checker() {	
-	rollupContract.on("Voted", (voters) => {
-		// check that voters are ok
-		for (let n=0;n<voters.length;n++) {
-			// check if contains tokens
-			const ethAddress = await rollupContract.keys(voters[n]);
-			let challange = false;
-			if (ethAddress=="0x0000000000000000000000000000000000000000") {
-				challange = true;
-			} else {
-				if (await erc20token.balanceOf(ethAddress) == 0) {
-					challange = true;
-				}
+
+async function listen_and_challange() {
+	console.log("listening....");
+	rollupContract.on("Voted", async (count, voters) => {
+		//  get new nullifiers
+		let rollEntriesNew = [];
+		for (let n=0;n<count;n++) {
+			let bbjPbk = await rollupContract.keys(voters[n]) ;
+			bbjPbk = BigInt(bbjPbk.toHexString());
+			if (!rollEntries.includes(bbjPbk)) {
+				rollEntriesNew.push(bbjPbk);
 			}
-			if (challange) {
-			
+		}
+	
+		// try to challange
+		for (let n=0;n<count;n++) {
+			const ethAddress = voters[n];
+			if (await tokenERC20.balanceOf(ethAddress, { blockTag: tokenBlockNumber }) == 0) {
+				await do_challange(rollEntriesNew, ethAddress);
+				return;
 			}
+		}
+		for (let n=0;n<rollEntriesNew.length;n++) {
+			rollEntries.push(rollEntriesNew[n]);
+			roll.nullifiers.insert(rollEntriesNew[n],0n);
 		}
 	})
 }
-*/
-async function start() {
-	
-	//await getStorageProof(wallet.address);
-	if (rollupContract === undefined ) {
-		await do_deploy();
-	}
+
+async function test() {
 	const c2 = new ethers.Contract(rollupContract.address,VoteRollup.abi, wallet2);
 	const c3 = new ethers.Contract(rollupContract.address,VoteRollup.abi, wallet3);
 	const r1 = await rollupContract.registerVoter(b256(vote1.votePbkAx));
@@ -187,12 +194,19 @@ async function start() {
         await r1.wait();
 	await r2.wait();
 	await r3.wait();
-
+	await listen_and_challange();
+	
 	await do_rollup([vote1,vote2]);
-	await do_rollup([vote3]);
+	//await do_rollup([vote3]);
 	console.log("result=",await rollupContract.result());
 	console.log("count=",await rollupContract.count());
+}
 
+async function start() {
+	if (rollupContract === undefined ) {
+		await do_deploy();
+	}
+	await test();
 	let apiRouter = express.Router();
 	apiRouter.get('/', async (req, res, next)=>{
     	try {

@@ -41,8 +41,8 @@ class Rollup {
        this.batchSize = batchSize;
        this.levels = levels;
     }
+
     async smtkeyexists(key) {
-	
 	let siblings = (await this.nullifiers.find(key)).siblings;
     	while (siblings.length < this.levels+1) siblings.push(BigInt(0));
 	return {
@@ -51,6 +51,16 @@ class Rollup {
 		key
 	}
     }
+
+    async insert(votePbks) {
+  	if (this.nullifiers == null) {
+	   this.nullifiers = await smt.newMemEmptyTrie();
+	}
+	for (let n=0;n<votePbks.length;n++) {
+	    await this.nullifiers.insert(votePbks[n],0n);	
+	}
+    }
+
     async rollup(votes) {
 	assert(votes.length <= this.batchSize);
 	if (this.nullifiers == null) {

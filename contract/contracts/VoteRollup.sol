@@ -17,14 +17,14 @@ contract VoteRollup {
   // Modulus zkSNARK
   uint256 constant _RFIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
-  event Voted(address[]);  
+  event Voted(uint256,address[]);  
   event Challanged();
   
   StorageProof storageProof;
   RollupVerifier rollupVerifier;
   SMTKeyExistsVerifier smtKeyExistsVerifier;
   
-  mapping(address=>bytes32) public keys;
+  mapping(address=>uint256) public keys;
 
   constructor(address _tokenAddress, uint256 _balanceMappingPosition, uint256 _blockNumber) public {
      storageProof = new StorageProof();
@@ -35,16 +35,17 @@ contract VoteRollup {
      blockNumber = _blockNumber;
   }
 
-  function registerVoter(bytes32 bbjPbkX) external {
+  function registerVoter(uint256 bbjPbkX) external {
   	keys[msg.sender] = bbjPbkX;
   }
-  
+ 
+  // the collect function aggregates results and ensures that the bbj public key is valid 
   function collect(bytes32 _nullifierRoot, uint256 _result, uint256 _count, address[] calldata _voters,
 		   uint[2] calldata _proofA, uint[2][2] calldata _proofB, uint[2] calldata _proofC) external {
      
       // verify proof, allow bypass for tests
       if (_proofA[0] != 0) {
-	  bytes32[] memory voters = new bytes32[](_voters.length);
+	  uint256[] memory voters = new uint256[](_voters.length);
 	  for (uint256 n =0;n<_count; n++) { 
 		voters[n] = keys[_voters[n]];
 		require(voters[n]!=0, "voter not in census");
@@ -59,12 +60,11 @@ contract VoteRollup {
       count += _count;
       nullifierRoot = _nullifierRoot;
 
-      emit Voted(_voters); // other alternatives is just to scan all txs, or just emit VotedInBlock(blockno) to reduce costs 
+      emit Voted(_count, _voters); // other alternatives is just to scan all txs, or just emit VotedInBlock(blockno) to reduce costs 
   }
 
   function challange(
 	address _voter,
-
 	bytes   memory _blockHeaderRLP,
 	bytes   memory _accountStateProof,
 	bytes   memory _storageProof,
@@ -74,11 +74,12 @@ contract VoteRollup {
 	uint[2] memory _proofC
   ) external {
 	// check that the voter registered the key
-        bytes32 bbjPbkX = keys[_voter];
+        uint256 bbjPbkX = keys[_voter];
 	require(bbjPbkX != 0);
 
 	// check that the voter do not have any token
-	uint256 balance = storageProof.getERC20Balance(
+	/*
+        uint256 balance = storageProof.getERC20Balance(
 		_voter, 
 		tokenAddress, 
 		balanceMappingPosition,
@@ -88,9 +89,10 @@ contract VoteRollup {
 		_storageProof
 	);
 	
-	require(balance == 0);
-
-	// check that the voter exists in the nullifiers
+	// require(balance == 0);
+	*/
+	
+        // check that the voter exists in the nullifiers
         uint[2] memory inputValues = [ uint(nullifierRoot) , uint(bbjPbkX) ];
 	require(smtKeyExistsVerifier.verifyProof(_proofA, _proofB, _proofC, inputValues)); 
   
