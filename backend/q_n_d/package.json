@@ -9,6 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@openzeppelin/contracts": "^4.2.0",
+    "@vocdoni/storage-proofs-eth": "^0.3.2",
     "circom": "^0.5.45",
     "circom_runtime": "^0.1.12",
     "cors": "^2.8.5",
