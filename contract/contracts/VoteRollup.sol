@@ -4,15 +4,15 @@ pragma experimental ABIEncoderV2;
 
 import { Verifier as RollupVerifier } from "../circuits/release/rollup.sol";
 import { Verifier as SMTKeyExistsVerifier } from "../circuits/release/smtkeyexists.sol";
-import { StorageProof } from "./lib.sol";
+import { TokenStorageProof } from "./lib.sol";
 
 contract VoteRollup {
   bytes32 public nullifierRoot;
   uint256 public result;   
   uint256 public count;
-  address tokenAddress;
-  uint256 balanceMappingPosition;
-  uint256 blockNumber;
+  address public tokenAddress;
+  uint256 public balanceMappingPosition;
+  bytes32 public blockHash;
 
   // Modulus zkSNARK
   uint256 constant _RFIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
@@ -20,19 +20,19 @@ contract VoteRollup {
   event Voted(uint256,address[]);  
   event Challanged();
   
-  StorageProof storageProof;
+  TokenStorageProof storageProof;
   RollupVerifier rollupVerifier;
   SMTKeyExistsVerifier smtKeyExistsVerifier;
   
   mapping(address=>uint256) public keys;
 
-  constructor(address _tokenAddress, uint256 _balanceMappingPosition, uint256 _blockNumber) public {
-     storageProof = new StorageProof();
+  constructor(address _tokenAddress, uint256 _balanceMappingPosition, bytes32 _blockHash) public {
+     storageProof = new TokenStorageProof();
      rollupVerifier = new RollupVerifier();
      smtKeyExistsVerifier = new SMTKeyExistsVerifier();
      tokenAddress = _tokenAddress;
      balanceMappingPosition = _balanceMappingPosition;
-     blockNumber = _blockNumber;
+     blockHash = _blockHash;
   }
 
   function registerVoter(uint256 bbjPbkX) external {
@@ -73,24 +73,23 @@ contract VoteRollup {
 	uint[2][2] memory _proofB,
 	uint[2] memory _proofC
   ) external {
+	// check that the header is valid
+	require(keccak256(_blockHeaderRLP)==blockHash);
+
 	// check that the voter registered the key
         uint256 bbjPbkX = keys[_voter];
 	require(bbjPbkX != 0);
 
 	// check that the voter do not have any token
-	/*
         uint256 balance = storageProof.getERC20Balance(
 		_voter, 
 		tokenAddress, 
 		balanceMappingPosition,
-	   	blockNumber,
 		_blockHeaderRLP, 
 		_accountStateProof, 
 		_storageProof
 	);
-	
-	// require(balance == 0);
-	*/
+	require(balance == 0);
 	
         // check that the voter exists in the nullifiers
         uint[2] memory inputValues = [ uint(nullifierRoot) , uint(bbjPbkX) ];

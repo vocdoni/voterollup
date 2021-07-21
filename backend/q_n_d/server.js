@@ -78,10 +78,11 @@ function b256(n) {
 
 async function do_deploy() {
     console.log("deploying contract...");
+    let block = await provider.getBlock(tokenBlockNumber);
     rollupContract = await factory.deploy(
 	    tokenAddress,
 	    tokenSlot,
-	    tokenBlockNumber
+	    block.hash
     );
     console.log("deploy tx ",rollupContract.deployTransaction.hash);
     await rollupContract.deployTransaction.wait()
@@ -115,11 +116,9 @@ async function do_rollup(votes) {
 async function getStorageProof(holderAddress) {
    const balanceSlot = ERC20Prover.getHolderBalanceSlot(holderAddress, tokenSlot)
    const storageProover = new ERC20Prover(web3Url)
-   const data = await storageProover.getProof(tokenAddress, [balanceSlot], tokenBlockNumber, false)
-
-   return data;
+   const data = await storageProover.getProof(tokenAddress, [balanceSlot], tokenBlockNumber, true)
    const { proof, block, blockHeaderRLP, accountProofRLP, storageProofsRLP } = data
-   console.log(data);	
+   return data;
 }
 
 async function do_challange(rollEntriesNew, ethAddress) {
@@ -194,10 +193,10 @@ async function test() {
         await r1.wait();
 	await r2.wait();
 	await r3.wait();
-	await listen_and_challange();
+	//await listen_and_challange();
 	
 	await do_rollup([vote1,vote2]);
-	//await do_rollup([vote3]);
+	await do_rollup([vote3]);
 	console.log("result=",await rollupContract.result());
 	console.log("count=",await rollupContract.count());
 }

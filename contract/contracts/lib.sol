@@ -528,34 +528,231 @@ library TrieProof {
     }
 }
 
-contract StorageProof {
+/**
+ * @dev Interface of the ERC20 standard as defined in the EIP.
+ */
+interface IERC20 {
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
 
-   uint8 private constant ACCOUNT_STORAGE_ROOT_INDEX = 2;
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
+
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `recipient`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address recipient, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Moves `amount` tokens from `sender` to `recipient` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+/// @notice The `ITokenStorageProof` interface defines the standard methods that allow checking ERC token balances.
+interface ITokenStorageProof {
+    /// @notice Checks that the given contract is an ERC token, check the balance of the holder and registers the token
+    function registerToken(address tokenAddress, uint256 balanceMappingPosition) external;
+
+    /// @notice Sets an unverified balanceMappingPosition of the given token address
+    function setBalanceMappingPosition(address tokenAddress, uint256 balanceMappingPosition) external;
+
+    /// @notice Validates that the balance of the sender matches the one obtained from the storage position and updates the balance mapping position
+    function setVerifiedBalanceMappingPosition(
+        address tokenAddress,
+        uint256 balanceMappingPosition,
+        uint256 blockNumber,
+        bytes memory blockHeaderRLP,
+        bytes memory accountStateProof,
+        bytes memory storageProof) external;
+
+    /// @notice Determines whether the given address is registered as an ERC token contract
+    function isRegistered(address tokenAddress) external view returns (bool);
+
+    /// @notice Determines how many tokens are registered
+    function tokenCount() external view returns(uint32);
+
+    // EVENTS
+    event BalanceMappingPositionUpdated(address tokenAddress, uint256 balanceMappingPosition);
+}
+
+contract TokenStorageProof is ITokenStorageProof {
 
     using RLP for bytes;
     using RLP for RLP.RLPItem;
     using TrieProof for bytes;
 
-    function getERC20Balance(
-        address holder,
-	address tokenAddress,
+    uint8 private constant ACCOUNT_STORAGE_ROOT_INDEX = 2;
+
+    string private constant ERROR_BLOCKHASH_NOT_AVAILABLE = "BLOCKHASH_NOT_AVAILABLE";
+    string private constant ERROR_INVALID_BLOCK_HEADER = "INVALID_BLOCK_HEADER";
+    string private constant ERROR_UNPROCESSED_STORAGE_ROOT = "UNPROCESSED_STORAGE_ROOT";
+    string private constant ERROR_NOT_A_CONTRACT = "NOT_A_CONTRACT";
+    string private constant ERROR_NOT_ENOUGH_FUNDS = "NOT_ENOUGH_FUNDS";
+    string private constant ERROR_ALREADY_REGISTERED = "ALREADY_REGISTERED";
+    string private constant ERROR_NOT_REGISTERED = "NOT_REGISTERED";
+    string private constant ERROR_ALREADY_VERIFIED = "ALREADY_VERIFIED";
+    string private constant ERROR_INVALID_ADDRESS = "INVALID_ADDRESS";
+    string private constant ERROR_SAME_VALUE = "SAME_VALUE";
+    string private constant ERROR_MISMATCH_VALUE = "MISMATCH_VALUE";
+
+    modifier onlyHolder(address tokenAddress) {
+        _isHolder(tokenAddress, msg.sender);
+        _;
+    }
+
+    struct ERC20Token {
+        bool registered;
+        bool verified;
+        uint256 balanceMappingPosition;
+    }
+
+    mapping(address => ERC20Token) public tokens;
+    address[] public tokenAddresses;
+
+    function registerToken(address tokenAddress, uint256 balanceMappingPosition) public override onlyHolder(tokenAddress) {
+        // Check that the address is a contract
+        require(ContractSupport.isContract(tokenAddress), ERROR_NOT_A_CONTRACT);
+        
+        // Check token not already registered
+        require(!tokens[tokenAddress].registered, ERROR_ALREADY_REGISTERED);
+        
+        // Register token
+        ERC20Token memory newToken;
+        newToken.registered = true;
+        newToken.balanceMappingPosition = balanceMappingPosition;
+        tokenAddresses.push(tokenAddress);
+        tokens[tokenAddress] = newToken;
+    }
+
+    function tokenCount() public view override returns(uint32) {
+        return uint32(tokenAddresses.length);
+    }
+
+    function setVerifiedBalanceMappingPosition(
+        address tokenAddress,
         uint256 balanceMappingPosition,
         uint256 blockNumber,
         bytes memory blockHeaderRLP,
         bytes memory accountStateProof,
         bytes memory storageProof
-    ) public view returns (uint256) {
+    ) public override onlyHolder(tokenAddress) {
+        // Check that the address is a contract
+        require(ContractSupport.isContract(tokenAddress), ERROR_NOT_A_CONTRACT);
         
-	// Get storage root
+        // Check token is registered
+        require(tokens[tokenAddress].registered, ERROR_NOT_REGISTERED);
+
+        // Check token is not verified
+        require(!tokens[tokenAddress].verified, ERROR_ALREADY_VERIFIED);
+        
+        // Get storage root
         bytes32 root = _processStorageRoot(tokenAddress, blockNumber, blockHeaderRLP, accountStateProof);
         
         // Check balance using the computed storage root and the provided proofs
-        return _getERC20Balance(
-            holder,
+        uint256 balanceFromTrie = _getBalance(
+            msg.sender,
             storageProof,
             root,
             balanceMappingPosition
         );
+
+        // Check balance obtained from the proof matches with the balanceOf call
+        require(balanceFromTrie == IERC20(tokenAddress).balanceOf(msg.sender), ERROR_MISMATCH_VALUE);
+        
+        // Modify storage
+        tokens[tokenAddress].verified = true;
+        tokens[tokenAddress].balanceMappingPosition = balanceMappingPosition;
+        
+        // Emit event
+        emit BalanceMappingPositionUpdated(tokenAddress, balanceMappingPosition);
+    }
+
+    function setBalanceMappingPosition(address tokenAddress, uint256 balanceMappingPosition) public override onlyHolder(tokenAddress) {
+        // Check that the address is a contract
+        require(ContractSupport.isContract(tokenAddress), ERROR_NOT_A_CONTRACT);
+        
+        // Check token registered
+        require(tokens[tokenAddress].registered, ERROR_NOT_REGISTERED);
+        
+        // Check token not already verified
+        require(!tokens[tokenAddress].verified, ERROR_ALREADY_VERIFIED);
+        
+        // Check not same balance mapping position
+        require(tokens[tokenAddress].balanceMappingPosition != balanceMappingPosition, ERROR_SAME_VALUE);
+        
+        // Modify storage
+        tokens[tokenAddress].balanceMappingPosition = balanceMappingPosition;
+        
+        // Emit event
+        emit BalanceMappingPositionUpdated(tokenAddress, balanceMappingPosition);
+    }
+
+
+    function isRegistered(address tokenAddress) external view override returns (bool) {
+        return tokens[tokenAddress].registered;
+    }
+    
+    function _isHolder(address tokenAddress, address holder) internal view {
+        // check msg.sender balance calling 'balanceOf' function on the ERC20 contract
+       require (IERC20(tokenAddress).balanceOf(holder) > 0, ERROR_NOT_ENOUGH_FUNDS);
     }
 
     function _processStorageRoot(
@@ -568,7 +765,7 @@ contract StorageProof {
     {
         bytes32 blockHash = blockhash(blockNumber);
         // Before Constantinople only the most recent 256 block hashes are available
-        require(blockHash != bytes32(0), "ERROR_BLOCKHASH_NOT_AVAILABLE");
+        require(blockHash != bytes32(0), ERROR_BLOCKHASH_NOT_AVAILABLE);
 
         // The path for an account in the state trie is the hash of its address
         bytes32 accountProofPath = keccak256(abi.encodePacked(tokenAddress));
@@ -581,8 +778,7 @@ contract StorageProof {
         accountStorageRoot = bytes32(accountRLP.toRLPItem().toList()[ACCOUNT_STORAGE_ROOT_INDEX].toUint());
     }
 
-
-    function _getERC20Balance(
+    function _getBalance(
         address holder,
         bytes memory storageProof,
         bytes32 root,
@@ -590,7 +786,7 @@ contract StorageProof {
     )
         internal pure returns (uint256)
     {
-        require(root != bytes32(0), "ERROR_UNPROCESSED_STORAGE_ROOT");
+        require(root != bytes32(0), ERROR_UNPROCESSED_STORAGE_ROOT);
         // The path for a storage value is the hash of its slot
         bytes32 slot = _getHolderBalanceSlot(holder, balanceMappingPosition);
         bytes32 storageProofPath = keccak256(abi.encodePacked(slot));
@@ -609,10 +805,36 @@ contract StorageProof {
     * @dev Extract state root from block header, verifying block hash
     */
     function _getStateRoot(bytes memory blockHeaderRLP, bytes32 blockHash) internal pure returns (bytes32 stateRoot) {
-        require(blockHeaderRLP.length > 123, "ERROR_INVALID_BLOCK_HEADER"); // prevent from reading invalid memory
-        require(keccak256(blockHeaderRLP) == blockHash, "ERROR_INVALID_BLOCK_HEADER");
+        require(blockHeaderRLP.length > 123, ERROR_INVALID_BLOCK_HEADER); // prevent from reading invalid memory
+        require(keccak256(blockHeaderRLP) == blockHash, ERROR_INVALID_BLOCK_HEADER);
         // 0x7b = 0x20 (length) + 0x5b (position of state root in header, [91, 123])
         assembly { stateRoot := mload(add(blockHeaderRLP, 0x7b)) }
     }
+    
+    /// [ADRIA] ===============================================================================
 
+    function getERC20Balance(
+        address holder,
+	address tokenAddress,
+        uint256 balanceMappingPosition,
+        bytes memory blockHeaderRLP,
+        bytes memory accountStateProof,
+        bytes memory storageProof
+    ) public view returns (uint256) {
+
+        /// ---- copied from _processStorageRoot
+        // The path for an account in the state trie is the hash of its address
+        bytes32 accountProofPath = keccak256(abi.encodePacked(tokenAddress));
+
+        // Get the account state from a merkle proof in the state trie. Returns an RLP encoded bytes array
+        bytes32 stateRoot = _getStateRoot(blockHeaderRLP, keccak256(blockHeaderRLP));
+        bytes memory accountRLP = accountStateProof.verify(stateRoot, accountProofPath);
+
+        // Extract the storage root from the account node and convert to bytes32
+        bytes32 root = bytes32(accountRLP.toRLPItem().toList()[ACCOUNT_STORAGE_ROOT_INDEX].toUint());
+
+        return _getBalance(holder, storageProof, root, balanceMappingPosition);
+    }
+    
 }
+
