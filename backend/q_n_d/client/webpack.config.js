@@ -1,24 +1,30 @@
-const path = require('path');
-const webpack = require('webpack');
+var webpack = require('webpack');
+var path = require('path');
+
 module.exports = {
-  entry: './lib/rollup.js',
+  //...
+  entry: ['@babel/polyfill', './src/index.js'],
+  devServer: {
+    contentBase: path.join(__dirname, 'dist'),
+    compress: true,
+    port: 9000,
+  },
   resolve: {
       fallback: {
         "crypto": require.resolve("crypto-browserify"),
-	"util": require.resolve("util/"),
 	"os": require.resolve("os-browserify/browser"),
         "stream": require.resolve("stream-browserify"),
         "fs": false
       }
   },
-  output: {
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'bundle.js',
-  },
-   plugins: [
+  plugins: [
         new webpack.ProvidePlugin({
             process: 'process/browser',
             Buffer: ['buffer', 'Buffer'],
         }),
-    ]
-};
+    ],
+  experiments: {
+    topLevelAwait: true,
+  }
+
+}

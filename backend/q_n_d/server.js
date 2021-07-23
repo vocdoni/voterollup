@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const morgan = require('morgan');
 const app = express();
-const PORT = 8080;
+const PORT = 9001;
 const { ethers } = require("ethers"); 
 const { RollupServer , VoteRollupContract } = require('./server-lib');
 
@@ -17,19 +17,24 @@ async function start() {
 	);
 	await server.deploy();
 	let apiRouter = express.Router();
-	apiRouter.get('/', async (req, res, next)=>{
+	apiRouter.get('/info', async (req, res, next)=>{
     	try {
-        	res.status(200).json(await do_rollup());
-    	} catch(e) {
+		info = {
+			address : server.rollupContract.address,
+			chainId : (await server.provider.getNetwork()).chainId,
+			token: server.tokenAddress,  
+			block: server.tokenBlockNumber
+		};
+        	res.status(200).json(info);
+	} catch(e) { 
        		console.log(e);
         	res.sendStatus(500);
-    	}
-	});
+	}});
 
 	app.use(bodyParser.json());
 	app.use(cors());
 	app.use(morgan('dev'));
-	app.use('/api',apiRouter)
+	app.use('/',apiRouter)
 
 	app.listen(PORT, ()=>{
     		console.log(`server is listening  on ${PORT}`);

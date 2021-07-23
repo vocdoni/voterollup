@@ -52,7 +52,7 @@ class RollupServer {
 	    );
 	    console.log("[DEPLOY] waiting tx ",this.rollupContract.deployTransaction.hash);
 	    await this.rollupContract.deployTransaction.wait()
-	    console.log("[DEPLOY] done");
+	    console.log("[DEPLOY] done, address is ",this.rollupContract.address);
 	}
 
 	async rollup(votes) {

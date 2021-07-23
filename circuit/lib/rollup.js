@@ -1,14 +1,10 @@
 const Scalar = require("ffjavascript").Scalar;
 const SMTMemDB = require("circomlib").SMTMemDB;
 
-const bigInt = require("snarkjs").bigInt;
 const { assert } = require("chai");
 const createBlakeHash = require("blake-hash");
 const { babyJub, eddsa, smt, poseidon } = require("circomlib");
 const ffutils = require("ffjavascript").utils;
-const EC = require("elliptic").ec;
-const ec = new EC("secp256k1");
-const crypto = require("crypto");
 
 class Voter {
     constructor(rawpvkHex) {
