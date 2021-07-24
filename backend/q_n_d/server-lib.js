@@ -9,8 +9,7 @@ class logger {
 }
 
 const { ERC20Prover } = require('@vocdoni/storage-proofs-eth');
-const erc20abi = `[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"spender","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"spender","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"who","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transferFrom","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"}]`;
-
+const ERC20ContractABI = require('./erc20.abi.json');
 const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
 
 class RollupServer {
@@ -50,14 +49,14 @@ class RollupServer {
 		this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
 		this.tokenAddress = await this.rollupContract.tokenAddress();
 		this.tokenSlot = Number(await this.rollupContract.balanceMappingPosition());
-		this.tokenERC20 = new ethers.Contract(this.tokenAddress, erc20abi, this.wallet);
+		this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
 	    this.log("[BIND] binding to address ",  address, "=> token=",this.tokenAddress,"@", this.tokenBlockNumber, "slot", this.tokenSlot);
 	}
 
 	async deploy(tokenAddress, tokenSlot) {
 	    this.tokenAddress = tokenAddress;
 	    this.tokenSlot = tokenSlot;
-	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, erc20abi, this.wallet);
+	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
 	
 	    this.tokenBlockNumber = await this.provider.getBlockNumber();
 	     this.log("[DEPLOY] deploying contract for ",tokenAddress,"@",this.tokenBlockNumber,"slot",tokenSlot);
