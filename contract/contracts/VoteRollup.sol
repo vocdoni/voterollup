@@ -13,6 +13,8 @@ contract VoteRollup {
   address public tokenAddress;
   uint256 public balanceMappingPosition;
   bytes32 public blockHash;
+  uint256 public blockNumber;
+  bool    public challanged;
 
   // Modulus zkSNARK
   uint256 constant _RFIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
@@ -26,13 +28,14 @@ contract VoteRollup {
   
   mapping(address=>uint256) public keys;
 
-  constructor(address _tokenAddress, uint256 _balanceMappingPosition, bytes32 _blockHash) public {
+  constructor(address _tokenAddress, uint256 _balanceMappingPosition, bytes32 _blockHash, uint256 _blockNumber) public {
      storageProof = new TokenStorageProof();
      rollupVerifier = new RollupVerifier();
      smtKeyExistsVerifier = new SMTKeyExistsVerifier();
      tokenAddress = _tokenAddress;
      balanceMappingPosition = _balanceMappingPosition;
      blockHash = _blockHash;
+     blockNumber = _blockNumber;
   }
 
   function registerVoter(uint256 bbjPbkX) external {
@@ -94,7 +97,8 @@ contract VoteRollup {
         // check that the voter exists in the nullifiers
         uint[2] memory inputValues = [ uint(nullifierRoot) , uint(bbjPbkX) ];
 	require(smtKeyExistsVerifier.verifyProof(_proofA, _proofB, _proofC, inputValues)); 
-  
+ 
+        challanged = true;
         emit Challanged();
   }
 }

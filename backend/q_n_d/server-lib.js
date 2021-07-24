@@ -15,7 +15,11 @@ const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollu
 
 class RollupServer {
 
-	constructor(web3url, walletPvk, tokenAddress, tokenSlot, tokenBlockNumber ) {
+	constructor(web3url, walletPvk,log ) {
+		if (log === undefined ) {
+			log = console.log;
+		}
+		this.log = log;
 		this.web3Url = web3url;
 		this.provider = new ethers.providers.JsonRpcProvider(this.web3Url);
 		this.wallet = new ethers.Wallet(walletPvk, this.provider)    
@@ -23,10 +27,10 @@ class RollupServer {
 		this.rollupZkeyFile = "../../contract/circuits/release/rollup.zkey";
 		this.smtKeyExistsWasmFile = "../../contract/circuits/release/smtkeyexists.wasm";	
 		this.smtKeyExistsZkeyFile = "../../contract/circuits/release/smtkeyexists.zkey";
-		this.tokenAddress = tokenAddress;
-		this.tokenSlot= tokenSlot;
-		this.tokenBlockNumber = tokenBlockNumber;
-		this.tokenERC20 = new ethers.Contract(this.tokenAddress, erc20abi, this.wallet);
+		this.tokenAddress = null;
+		this.tokenSlot= null;
+		this.tokenBlockNumber = null;
+		this.tokenERC20 = null;
 		this.rollupContract = null;
 		this.rollupBatchSize = 4;
 		this.rollupLevels = 10; 
@@ -41,24 +45,39 @@ class RollupServer {
 	   return nstr;
 	}
 
-	async deploy() {
-	    console.log("[DEPLOY] deploying contract...");
+	async attach(address) {
+		this.rollupContract = new ethers.Contract(address, VoteRollupContract.abi, this.wallet);
+		this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
+		this.tokenAddress = await this.rollupContract.tokenAddress();
+		this.tokenSlot = Number(await this.rollupContract.balanceMappingPosition());
+		this.tokenERC20 = new ethers.Contract(this.tokenAddress, erc20abi, this.wallet);
+	    this.log("[BIND] binding to address ",  address, "=> token=",this.tokenAddress,"@", this.tokenBlockNumber, "slot", this.tokenSlot);
+	}
+
+	async deploy(tokenAddress, tokenSlot) {
+	    this.tokenAddress = tokenAddress;
+	    this.tokenSlot = tokenSlot;
+	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, erc20abi, this.wallet);
+	
+	    this.tokenBlockNumber = await this.provider.getBlockNumber();
+	     this.log("[DEPLOY] deploying contract for ",tokenAddress,"@",this.tokenBlockNumber,"slot",tokenSlot);
 	    const block = await this.provider.getBlock(this.tokenBlockNumber);
 	    const factory = ethers.ContractFactory.fromSolidity(VoteRollupContract,this.wallet);
 	    this.rollupContract = await factory.deploy(
 		    this.tokenAddress,
 		    this.tokenSlot,
-		    block.hash
+		    block.hash,
+		    this.tokenBlockNumber
 	    );
-	    console.log("[DEPLOY] waiting tx ",this.rollupContract.deployTransaction.hash);
+	    this.log("[DEPLOY] waiting tx ",this.rollupContract.deployTransaction.hash);
 	    await this.rollupContract.deployTransaction.wait()
-	    console.log("[DEPLOY] done, address is ",this.rollupContract.address);
+	    this.log("[DEPLOY] done, address is ",this.rollupContract.address);
 	}
 
 	async rollup(votes) {
 	    this.rollEntries.push(...Array.from(votes, v => v.votePbkAx));
-	    console.log("[ROLLUP] rolling up votes for ", Array.from(votes, v => v.address));
-	    console.log("[ROLLUP] generating proof");
+	    this.log("[ROLLUP] rolling up votes for ", Array.from(votes, v => v.address));
+	    this.log("[ROLLUP] generating proof");
 	    let input = await this.roll.rollup(votes);
 	    let proof = await snarkjs.groth16.fullProve(input,this.rollupWasmFile,this.rollupZkeyFile /*, new logger()*/ );
 	    
@@ -75,9 +94,9 @@ class RollupServer {
 		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
 	    );
 	    
-	    console.log("[ROLLUP] sending tx...", tx.hash);
+	    this.log("[ROLLUP] sending tx...", tx.hash);
 	    let res = await tx.wait();
-	    console.log("[ROLLUP] rollup done");
+	    this.log("[ROLLUP] rollup done");
 	}
 
 	async _getStorageProof(holderAddress) {
@@ -88,7 +107,7 @@ class RollupServer {
 	}
 
 	async _challange(rollEntriesNew, ethAddress) {
-	   console.log("[CHALLANGE] generating proof addr ",ethAddress, " balance is zero");	
+	   this.log("[CHALLANGE] generating proof addr ",ethAddress, " balance is zero");	
 	  
 	   let roll = new rollup.Rollup(this.rollupBatchSize, this.rollupLevels);
 	   await roll.insert(this.rollEntries);
@@ -114,16 +133,16 @@ class RollupServer {
 		[ [proof.proof.pi_b[0][1],proof.proof.pi_b[0][0]],[proof.proof.pi_b[1][1],proof.proof.pi_b[1][0]] ],
 		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
 	    );
-	    console.log("[CHALLANGE] sending tx...", tx.hash);
+	    this.log("[CHALLANGE] sending tx...", tx.hash);
 	    
 	    let res = await tx.wait();
-	    console.log("[CHALLANGE] challanged ");
+	    this.log("[CHALLANGE] challanged ");
 	}
 
 	async startListenAndChallange() {
-		console.log("[CHALLANGER] start listening....");
+		this.log("[CHALLANGER] start listening....");
 		this.rollupContract.on("Voted", async (count, voters) => {
-			console.log("[CHALLANGER] verifying votes ", voters);
+			this.log("[CHALLANGER] verifying votes ", voters);
 			
 			//  get new nullifiers
 			let rollEntriesNew = [];
@@ -142,9 +161,11 @@ class RollupServer {
 					return;
 				}
 			}
+
+			this.log("[CHALLANGER] all seems ok, no votes to challange");
 			for (let n=0;n<rollEntriesNew.length;n++) {
 				this.rollEntries.push(rollEntriesNew[n]);
-				this.roll.nullifiers.insert(rollEntriesNew[n],0n);
+				this.roll.insert([rollEntriesNew[n]]);
 			}
 		})
 	}

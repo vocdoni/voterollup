@@ -5,11 +5,9 @@ async function start() {
 	const server = new RollupServer(
 		"https://rinkeby.vocdoni.net",
 		"0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976d",
-		"0x81A99588B326679E2fbc2768F81622B62ed70033",
-		0,
-		8959397
+		function(...args) { console.log("🥞", ...args); }
 	);
-	await server.deploy();
+	await server.deploy("0x81A99588B326679E2fbc2768F81622B62ed70033",0);
 
 	const wallet2 = new ethers.Wallet("0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976e", server.provider)    
 	const wallet3 = new ethers.Wallet("0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976f", server.provider)    
@@ -54,12 +52,19 @@ async function start() {
         await r1.wait();
 	await r2.wait();
 	await r3.wait();
-	await server.startListenAndChallange();
+
+	const watchdog = new RollupServer(
+		"https://rinkeby.vocdoni.net",
+		"0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976d",
+		function(...args) { console.log("🐕", ...args); }
+	);
+	await watchdog.attach(server.rollupContract.address);
+	await watchdog.startListenAndChallange();
 	
-	await server.rollup([vote1,vote2]);
-	//await server.rollup([vote3]);
-	console.log("result=",await server.rollupContract.result());
-	console.log("count=",await server.rollupContract.count());
+	await server.rollup([vote1]);
+	await server.rollup([vote2]);
+	console.log("result=",Number(await server.rollupContract.result()));
+	console.log("count=",Number(await server.rollupContract.count()));
 }
 
 (async () => {

@@ -17,8 +17,6 @@ async function component() {
   }
  
   let rollupAddress = serverInfo.address;
-  let tokenAddress = serverInfo.token;
-  let tokenBlockNumber = serverInfo.block;
   let chainId = serverInfo.chainId; 
   
   try {
@@ -31,9 +29,20 @@ async function component() {
   	alert("please, use chainId "+chainId);
 	return;
   }
-
   const signer =  provider.getSigner();
   const rollup = new ethers.Contract(rollupAddress, VoteRollup.abi , signer);
+ 
+  const challanged = await rollup.challanged();
+  if (challanged) {
+  	alert("The votation has been challanged. bye.");
+	return;
+  }
+
+  const tokenAddress = await rollup.tokenAddress();
+
+  const tokenBlockNumber= await rollup.blockNumber();
+  const voteCount = await rollup.count();
+  const voteResult = await rollup.result();
   const erc20 = new ethers.Contract(tokenAddress, erc20abi, signer);
   const erc20symbol = await erc20.symbol();
   const balance = await erc20.balanceOf(signer.getAddress());
@@ -42,7 +51,9 @@ async function component() {
 	  "\nRollup:"+rollupAddress+
 	  "\nToken:"+erc20symbol+" @ "+tokenBlockNumber+
 	  "\nbalance="+balance+
-	  "\nchainId="+chainId
+	  "\nchainId="+chainId+
+	  "\nvoteCount="+voteCount+
+	  "\nvoteResult="+voteResult
   );
  
   const userBbjPbk = await rollup.keys(signer.getAddress());
@@ -62,10 +73,13 @@ async function component() {
 	}
   }
   const choice = BigInt(parseInt(prompt("Your vote, please")));
-  let vote = voter.vote(choice);
-  console.log(vote);
-
-
+  let vote = await voter.vote(choice);
+  vote.address = await signer.getAddress();
+  vote = JSON.stringify(vote, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+  );
+   let res = await ethers.utils.fetchJson("http://localhost:9001/vote", vote);
+   alert(res);
 }
 
 
