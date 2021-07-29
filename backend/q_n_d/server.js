@@ -10,7 +10,7 @@ const { RollupServer , VoteRollupContract } = require('./server-lib');
 const WEB3URL = "https://rinkeby.vocdoni.net";
 const ACCOUNT_PVK = "0xb2bb17da3946e4267cd191dc4b601fcec9143b0902a826da589ae7bc6e4a976d";
 
-const QUEUE_SIZE = 1;
+const QUEUE_SIZE = 2;
 let queue = []
 
 async function serve_api(address) {

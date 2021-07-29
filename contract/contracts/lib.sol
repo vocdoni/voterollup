@@ -813,6 +813,32 @@ contract TokenStorageProof is ITokenStorageProof {
     
     /// [ADRIA] ===============================================================================
 
+    function _getMappingValueSlot(uint256 key, uint256 mappingPosition) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(bytes32(key), mappingPosition));
+    }
+
+
+    function _getValue(
+        uint256 key,
+        bytes memory storageProof,
+        bytes32 root,
+        uint256 mappingPosition
+    )
+        internal pure returns (uint256)
+    {
+        require(root != bytes32(0), ERROR_UNPROCESSED_STORAGE_ROOT);
+        // The path for a storage value is the hash of its slot
+        bytes32 slot = _getMappingValueSlot(key, mappingPosition);
+        bytes32 storageProofPath = keccak256(abi.encodePacked(slot));
+
+        bytes memory value;
+        value = TrieProof.verify(storageProof, root, storageProofPath);
+
+        return value.toRLPItem().toUint();
+    }
+
+
+
     function getERC20Balance(
         address holder,
 	address tokenAddress,
@@ -834,6 +860,29 @@ contract TokenStorageProof is ITokenStorageProof {
         bytes32 root = bytes32(accountRLP.toRLPItem().toList()[ACCOUNT_STORAGE_ROOT_INDEX].toUint());
 
         return _getBalance(holder, storageProof, root, balanceMappingPosition);
+    }
+    
+    function getValueOf(
+        uint256 key,
+	address _contract,
+        uint256 mappingPosition,
+        bytes memory blockHeaderRLP,
+        bytes memory accountStateProof,
+        bytes memory storageProof
+    ) public view returns (uint256) {
+
+        /// ---- copied from _processStorageRoot
+        // The path for an account in the state trie is the hash of its address
+        bytes32 accountProofPath = keccak256(abi.encodePacked(_contract));
+
+        // Get the account state from a merkle proof in the state trie. Returns an RLP encoded bytes array
+        bytes32 stateRoot = _getStateRoot(blockHeaderRLP, keccak256(blockHeaderRLP));
+        bytes memory accountRLP = accountStateProof.verify(stateRoot, accountProofPath);
+
+        // Extract the storage root from the account node and convert to bytes32
+        bytes32 root = bytes32(accountRLP.toRLPItem().toList()[ACCOUNT_STORAGE_ROOT_INDEX].toUint());
+
+        return _getValue(key, storageProof, root, mappingPosition);
     }
     
 }

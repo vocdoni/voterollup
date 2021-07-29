@@ -11,6 +11,9 @@ class logger {
 const { ERC20Prover } = require('@vocdoni/storage-proofs-eth');
 const ERC20ContractABI = require('./erc20.abi.json');
 const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
+const RegistryContract = require("../../contract/artifacts/contracts/Registry.sol/Registry.json");
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 class RollupServer {
 
@@ -35,6 +38,7 @@ class RollupServer {
 		this.rollupLevels = 10; 
 		this.roll = new rollup.Rollup(this.rollupBatchSize,this.rollupLevels);
 		this.rollEntries = []
+		this.registryContract = null;
 	}
 
 	b256(n) {
@@ -45,49 +49,54 @@ class RollupServer {
 	}
 
 	async attach(address) {
-		this.rollupContract = new ethers.Contract(address, VoteRollupContract.abi, this.wallet);
-		this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
-		this.tokenAddress = await this.rollupContract.tokenAddress();
-		this.tokenSlot = Number(await this.rollupContract.balanceMappingPosition());
-		this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
-	    this.log("[BIND] binding to address ",  address, "=> token=",this.tokenAddress,"@", this.tokenBlockNumber, "slot", this.tokenSlot);
+	    this.rollupContract = new ethers.Contract(address, VoteRollupContract.abi, this.wallet);
+	    this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
+	    this.tokenAddress = await this.rollupContract.tokenAddress();
+	    this.tokenSlot = Number(await this.rollupContract.balanceMappingPosition());
+	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
+	    this.registryContract = new ethers.Contract(await this.rollupContract.registry(), RegistryContract.abi, this.wallet);
+	    this.log("[BIND] binding to address ",  address, "=> token=",this.tokenAddress,"@", this.tokenBlockNumber, "slot", this.tokenSlot, "reg", this.registryContract.address);
+	    
+	}
+	
+	async deployRegistry() {
+	    this.log("[DEPLOY-REG] deploying Registry contract");
+	    const factory = ethers.ContractFactory.fromSolidity(RegistryContract,this.wallet);
+	    this.registryContract = await factory.deploy();
+	    this.log("[DEPLOY-REG] waiting tx ",this.registryContract.deployTransaction.hash);
+	    await this.registryContract.deployTransaction.wait()
+	    this.log("[DEPLOY-REG] done, address is ",this.registryContract.address);
+	    return this.registryContract.address;
 	}
 
-	async deploy(tokenAddress, tokenSlot) {
-	    this.tokenAddress = tokenAddress;
-	    this.tokenSlot = tokenSlot;
-	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
-	
-	    this.tokenBlockNumber = await this.provider.getBlockNumber();
-	     this.log("[DEPLOY] deploying contract for ",tokenAddress,"@",this.tokenBlockNumber,"slot",tokenSlot);
-	    const block = await this.provider.getBlock(this.tokenBlockNumber);
+	async deployVoting(registry, tokenAddress, tokenSlot) { 
+	    this.log("[DEPLOY-VOT] deploying VoteRollup contract");
 	    const factory = ethers.ContractFactory.fromSolidity(VoteRollupContract,this.wallet);
-	    this.rollupContract = await factory.deploy(
-		    this.tokenAddress,
-		    this.tokenSlot,
-		    block.hash,
-		    this.tokenBlockNumber
-	    );
-	    this.log("[DEPLOY] waiting tx ",this.rollupContract.deployTransaction.hash);
+	    this.rollupContract = await factory.deploy(registry, tokenAddress, tokenSlot);
+	    this.log("[DEPLOY-VOT] waiting tx ",this.rollupContract.deployTransaction.hash);
 	    await this.rollupContract.deployTransaction.wait()
-	    this.log("[DEPLOY] done, address is ",this.rollupContract.address);
+	    this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
+	    this.log("[DEPLOY-VOT] done, address is ",this.rollupContract.address);
+	    this.registryContract = new ethers.Contract(registry, RegistryContract.abi, this.wallet);
 	}
 
 	async rollup(votes) {
 	    this.rollEntries.push(...Array.from(votes, v => v.votePbkAx));
-	    this.log("[ROLLUP] rolling up votes for ", Array.from(votes, v => v.address));
+	    for (let n=0;n<votes.length;n++) {
+		let bbj = votes[n].votePbkAx;
+		let addr = await this.registryContract.bbj2addr(bbj , { blockTag: this.tokenBlockNumber } );
+	    	this.log("[ROLLUP] rolling up vote ", bbj," => ", addr);
+	    }
+
 	    this.log("[ROLLUP] generating proof");
 	    let input = await this.roll.rollup(votes);
 	    let proof = await snarkjs.groth16.fullProve(input,this.rollupWasmFile,this.rollupZkeyFile /*, new logger()*/ );
-	    
-	    let addrs = Array.from(votes, v => v.address );
-	    while (addrs.length < this.roll.batchSize) addrs.push("0x0000000000000000000000000000000000000000"); 
-	      
+	  
 	    let tx = await this.rollupContract.collect(
 		this.b256(input.newNullifiersRoot),
 		input.result,
 		input.nVotes,
-		addrs,
+		input.votePbkAx,
 		[ proof.proof.pi_a[0], proof.proof.pi_a[1] ],
 		[ [proof.proof.pi_b[0][1],proof.proof.pi_b[0][0]],[proof.proof.pi_b[1][1],proof.proof.pi_b[1][0]] ],
 		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
@@ -98,36 +107,57 @@ class RollupServer {
 	    this.log("[ROLLUP] rollup done");
 	}
 
-	async _getStorageProof(holderAddress) {
+	async _getERC20StorageProof(holderAddress) {
 	   const balanceSlot = ERC20Prover.getHolderBalanceSlot(holderAddress, this.tokenSlot)
 	   const storageProver = new ERC20Prover(this.web3Url)
 	   const data = await storageProver.getProof(this.tokenAddress, [balanceSlot], this.tokenBlockNumber, true)
 	   return data;
 	}
 
-	async _challange(rollEntriesNew, ethAddress) {
-	   this.log("[CHALLANGE] generating proof addr ",ethAddress, " balance is zero");	
-	  
+
+	async _getBbjStorageProof(bbjKey) {
+	   const bbjSlot = ERC20Prover.getMappingSlot(bbjKey, 1);
+	   const storageProver = new ERC20Prover(this.web3Url)
+	   const data = await storageProver.getProof(this.registryContract.address, [bbjSlot], this.tokenBlockNumber, true)
+	   return data;
+	}
+
+	async _challange(rollEntriesNew, bbjPbk, ethAddress) {
+	   this.log("[CHALLANGE] generating proof addr ",bbjPbk);	
+	 
+	   // create new rollup with the entries
 	   let roll = new rollup.Rollup(this.rollupBatchSize, this.rollupLevels);
 	   await roll.insert(this.rollEntries);
 	   await roll.insert(rollEntriesNew);
-	  
-	   const storageProof = await this._getStorageProof(ethAddress);
+
+	   // check if the nullifier root is ok
 	   const root = BigInt(await this.rollupContract.nullifierRoot());
-	    
 	   if (root != roll.nullifiers.root) {
 	       throw  "UNABLE TO CHALLANGE, ROOT IS NOT UPDATED";
 	   }
 
-	   let bbjPbk = await this.rollupContract.keys(ethAddress) ;
+	   // create proof-of-inclusion proof
 	   let input = await roll.smtkeyexists(bbjPbk);
 	   let proof = await snarkjs.groth16.fullProve(input,this.smtKeyExistsWasmFile,this.smtKeyExistsZkeyFile/*, new logger()*/ );
-	   
+
+	   // get the bbk => eth proof
+	   const bbjStorageProof = await this._getBbjStorageProof(bbjPbk);
+	   let erc20StorageProof = { blockHeaderRLP : "0x00", accountProofRLP : "0x00", storageProofsRLP : [ "0x00"] };
+	   if (ethAddress != null ) {
+		// get the erc20(eth) == 0 proof
+		erc20StorageProof = await this._getERC20StorageProof(ethAddress);
+	   }
+
 	   let tx = await this.rollupContract.challange(
-		ethAddress,
-		storageProof.blockHeaderRLP,
-		storageProof.accountProofRLP,
-		storageProof.storageProofsRLP[0],
+		bbjPbk,
+		bbjStorageProof.blockHeaderRLP,
+		
+		bbjStorageProof.accountProofRLP,
+		bbjStorageProof.storageProofsRLP[0],	
+		
+		erc20StorageProof.accountProofRLP,
+		erc20StorageProof.storageProofsRLP[0],
+		
 		[ proof.proof.pi_a[0], proof.proof.pi_a[1] ],
 		[ [proof.proof.pi_b[0][1],proof.proof.pi_b[0][0]],[proof.proof.pi_b[1][1],proof.proof.pi_b[1][0]] ],
 		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
@@ -135,33 +165,38 @@ class RollupServer {
 	    this.log("[CHALLANGE] sending tx...", tx.hash);
 	    
 	    let res = await tx.wait();
-	    this.log("[CHALLANGE] challanged ");
+	    this.log("[CHALLANGE] challanged ", res.logs[0]);
 	}
 
 	async startListenAndChallange() {
 		this.log("[CHALLANGER] start listening....");
 		this.rollupContract.on("Voted", async (count, voters) => {
-			this.log("[CHALLANGER] verifying votes ", voters);
+			this.log("[CHALLANGER] verifying votes ", voters.map(n => n.toString()));
 			
 			//  get new nullifiers
 			let rollEntriesNew = [];
 			for (let n=0;n<count;n++) {
-				let bbjPbk = await this.rollupContract.keys(voters[n]) ;
-				bbjPbk = BigInt(bbjPbk.toHexString());
-				if (!this.rollEntries.includes(bbjPbk)) {
-					rollEntriesNew.push(bbjPbk);
+				if (!this.rollEntries.includes(voters[n])) {
+					rollEntriesNew.push(voters[n]);
 				}
 			}
 			// try to challange
 			for (let n=0;n<count;n++) {
-				const ethAddress = voters[n];
-				if (await this.tokenERC20.balanceOf(ethAddress, { blockTag: this.tokenBlockNumber }) == 0) {
-					await this._challange(rollEntriesNew, ethAddress);
+				const ethAddress = await this.registryContract.bbj2addr(voters[n], { blockTag: this.tokenBlockNumber });
+				if (ethAddress == ZERO_ADDR) {
+					this.log("[CHALLANGER] bbj not registered ", voters[n].toString()); 
+					await this._challange(rollEntriesNew, voters[n], null);
 					return;
 				}
+				let balance = await this.tokenERC20.balanceOf(ethAddress, { blockTag: this.tokenBlockNumber });  
+				if (balance == 0) {
+					this.log("[CHALLANGER] bbj registered, but ethaddress balance is zero ", ethAddress, voters[n].toString());
+					await this._challange(rollEntriesNew, voters[n], ethAddress);
+					return;
+				}
+				this.log("[CHALLANGER] vote ok ",voters[n].toString(), ethAddress, balance.toString());
 			}
 
-			this.log("[CHALLANGER] all seems ok, no votes to challange");
 			for (let n=0;n<rollEntriesNew.length;n++) {
 				this.rollEntries.push(rollEntriesNew[n]);
 				this.roll.insert([rollEntriesNew[n]]);
@@ -169,4 +204,4 @@ class RollupServer {
 		})
 	}
 }
-module.exports = { RollupServer, VoteRollupContract } 
+module.exports = { RollupServer, VoteRollupContract, RegistryContract } 
