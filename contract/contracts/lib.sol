@@ -837,8 +837,6 @@ contract TokenStorageProof is ITokenStorageProof {
         return value.toRLPItem().toUint();
     }
 
-
-
     function getERC20Balance(
         address holder,
 	address tokenAddress,
@@ -846,9 +844,8 @@ contract TokenStorageProof is ITokenStorageProof {
         bytes memory blockHeaderRLP,
         bytes memory accountStateProof,
         bytes memory storageProof
-    ) public view returns (uint256) {
+    ) public pure returns (uint256) {
 
-        /// ---- copied from _processStorageRoot
         // The path for an account in the state trie is the hash of its address
         bytes32 accountProofPath = keccak256(abi.encodePacked(tokenAddress));
 
@@ -869,9 +866,8 @@ contract TokenStorageProof is ITokenStorageProof {
         bytes memory blockHeaderRLP,
         bytes memory accountStateProof,
         bytes memory storageProof
-    ) public view returns (uint256) {
+    ) public pure returns (uint256) {
 
-        /// ---- copied from _processStorageRoot
         // The path for an account in the state trie is the hash of its address
         bytes32 accountProofPath = keccak256(abi.encodePacked(_contract));
 

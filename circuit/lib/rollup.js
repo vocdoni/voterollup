@@ -13,10 +13,10 @@ class Voter {
        const pvk = Scalar.shr(ffutils.leBuff2int(rawpvkHash),3);
        const A = babyJub.mulPointEscalar(babyJub.Base8, pvk);
        this.key = { rawpvk , pvk , pbk : { x: A[0], y: A[1] } }
-   }
+    }
 
-    vote(voteValue) {
-        const signature = eddsa.signPoseidon(this.key.rawpvk, voteValue);
+    vote(voteElectionId, voteValue) {
+	const signature = eddsa.signPoseidon(this.key.rawpvk, poseidon([voteElectionId, voteValue]) );
 
         return {
             votePbkAx: this.key.pbk.x,
@@ -26,16 +26,18 @@ class Voter {
             voteSigR8x: signature.R8[0],
             voteSigR8y: signature.R8[1],
  
-            voteValue,
+            voteElectionId,
+	    voteValue,
         }
     }
 }
 
 class Rollup {
-    constructor(batchSize, levels) { 
+    constructor(electionId, batchSize, levels) { 
        this.nullifiers = null;
        this.batchSize = batchSize;
        this.levels = levels;
+       this.electionId = electionId;
     }
 
     async smtkeyexists(key) {
@@ -63,6 +65,7 @@ class Rollup {
 	   this.nullifiers = await smt.newMemEmptyTrie();
 	}
 	var input = {
+		electionId : this.electionId,
 		nVotes: votes.length,
 		oldNullifiersRoot: this.nullifiers.root,
 		newNullifiersRoot: 0n,
@@ -83,6 +86,7 @@ class Rollup {
 	let result = 0n;
         input.voteNullifierSiblings = [];
 	for (var n = 0; n<votes.length;n++) {
+		assert(votes[n].voteElectionId == this.electionId);
 		input.votePbkAx.push(votes[n].votePbkAx);
 		input.votePbkAy.push(votes[n].votePbkAy);
 		input.voteSigS.push(votes[n].voteSigS);

@@ -32,37 +32,36 @@ describe("Test rollup", function () {
     });
 
     it("1 batch, 1 vote, batchSize 2", async () => {
-	let rollup = new Rollup(2,2);
+	let rollup = new Rollup(1,2,2);
 	let input = await rollup.rollup([
-		await V1.vote(10000n),
+		await V1.vote(1n,10000n),
 	]);
 	const w = await circuit.calculateWitness(input, { logTrigger:false, logOutput: false, logSet: false });
 	await circuit.checkConstraints(w);
 	const hashInputs = w[1];
-	console.log("inputsHash=",hashInputs);
     });
 
     it("1 batch, 2 votes, batchSize 2", async () => {
-	let rollup = new Rollup(2,2);
+	let rollup = new Rollup(1n,2,2);
 	let input = await rollup.rollup([
-		await V1.vote(10000n),
-		await V2.vote(10001n),
+		await V1.vote(1n,10000n),
+		await V2.vote(1n,10001n),
 	]);
 	const w = await circuit.calculateWitness(input, { logTrigger:false, logOutput: false, logSet: false });
 	await circuit.checkConstraints(w); 
     });
 
     it("2 batches, 3 votes, batchSize 2", async () => {
-	let rollup = new Rollup(2,2);
+	let rollup = new Rollup(1n,2,2);
 	let input1 = await rollup.rollup([
-		await V1.vote(10000n),
-		await V2.vote(10001n),
+		await V1.vote(1n,10000n),
+		await V2.vote(1n,10001n),
 	]);
 	const w1 = await circuit.calculateWitness(input1, { logTrigger:false, logOutput: false, logSet: false });
 	await circuit.checkConstraints(w1); 
 
 	let input2 = await rollup.rollup([
-		await V3.vote(30000n),
+		await V3.vote(1n,30000n),
 	]);
 	
 	const w2 = await circuit.calculateWitness(input2, { logTrigger:false, logOutput: false, logSet: false });

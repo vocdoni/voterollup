@@ -30,10 +30,10 @@ describe("Test voter added into the nullifiers tree", function () {
     });
 
     it("10 levels, 2 votes", async () => {
-	let rollup = new Rollup(2,10);
+	let rollup = new Rollup(1,2,10);
 	await rollup.rollup([
-		await V1.vote(10000n),
-		await V2.vote(10000n)
+		await V1.vote(1n, 10000n),
+		await V2.vote(1n, 10000n)
 	]);
 	let input = await rollup.smtkeyexists(V1.key.pbk.x);
 	const w = await circuit.calculateWitness(input, { logTrigger:false, logOutput: false, logSet: false });

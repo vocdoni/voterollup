@@ -29,14 +29,16 @@ class RollupServer {
 		this.rollupZkeyFile = "../../contract/circuits/release/rollup.zkey";
 		this.smtKeyExistsWasmFile = "../../contract/circuits/release/smtkeyexists.wasm";	
 		this.smtKeyExistsZkeyFile = "../../contract/circuits/release/smtkeyexists.zkey";
+		this.votingId = null;
 		this.tokenAddress = null;
 		this.tokenSlot= null;
 		this.tokenBlockNumber = null;
+		this.tokenBlockHash = null;
 		this.tokenERC20 = null;
 		this.rollupContract = null;
 		this.rollupBatchSize = 4;
 		this.rollupLevels = 10; 
-		this.roll = new rollup.Rollup(this.rollupBatchSize,this.rollupLevels);
+		this.roll = null;
 		this.rollEntries = []
 		this.registryContract = null;
 	}
@@ -50,15 +52,20 @@ class RollupServer {
 
 	async attach(address) {
 	    this.rollupContract = new ethers.Contract(address, VoteRollupContract.abi, this.wallet);
-	    this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
-	    this.tokenAddress = await this.rollupContract.tokenAddress();
-	    this.tokenSlot = Number(await this.rollupContract.balanceMappingPosition());
-	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
 	    this.registryContract = new ethers.Contract(await this.rollupContract.registry(), RegistryContract.abi, this.wallet);
-	    this.log("[BIND] binding to address ",  address, "=> token=",this.tokenAddress,"@", this.tokenBlockNumber, "slot", this.tokenSlot, "reg", this.registryContract.address);
-	    
+	    this.log("[ATTACH-VOT] binding to address ",  address, "reg", this.registryContract.address);
 	}
-	
+
+	async attachVotingId(votingId, tokenAddress, slotId, tokenBlockNumber, tokenBlockHash) {
+	    this.tokenAddress = tokenAddress;
+	    this.tokenSlot = slotId;
+	    this.tokenBlockNumber = tokenBlockNumber;
+	    this.tokenBlockHash = tokenBlockHash;
+	    this.votingId = votingId;
+	    this.log("[ATTACH-VOTINGID] votingId=",this.votingId);
+	    this.roll = new rollup.Rollup(BigInt(this.votingId), this.rollupBatchSize,this.rollupLevels);
+	}
+
 	async deployRegistry() {
 	    this.log("[DEPLOY-REG] deploying Registry contract");
 	    const factory = ethers.ContractFactory.fromSolidity(RegistryContract,this.wallet);
@@ -69,15 +76,28 @@ class RollupServer {
 	    return this.registryContract.address;
 	}
 
-	async deployVoting(registry, tokenAddress, tokenSlot) { 
+	async deployVoting(registry) { 
 	    this.log("[DEPLOY-VOT] deploying VoteRollup contract");
 	    const factory = ethers.ContractFactory.fromSolidity(VoteRollupContract,this.wallet);
-	    this.rollupContract = await factory.deploy(registry, tokenAddress, tokenSlot);
+	    this.rollupContract = await factory.deploy(registry);
 	    this.log("[DEPLOY-VOT] waiting tx ",this.rollupContract.deployTransaction.hash);
 	    await this.rollupContract.deployTransaction.wait()
-	    this.tokenBlockNumber = Number(await this.rollupContract.blockNumber());
 	    this.log("[DEPLOY-VOT] done, address is ",this.rollupContract.address);
 	    this.registryContract = new ethers.Contract(registry, RegistryContract.abi, this.wallet);
+	}
+	
+	async start(tokenAddress, slotId) { 
+	    let tx = await this.rollupContract.start(tokenAddress, slotId);
+	    this.log("[START] creating new voting...", tx.hash);
+	    let res = await tx.wait();
+	    this.tokenAddress = tokenAddress;
+	    this.tokenSlot = slotId;
+	    this.tokenBlockNumber = Number(res.events[0].args[3]);
+	    this.tokenBlockHash = res.events[0].args[4];
+	    console.log("tokenBlockHash", this.tokenBlockHash);
+	    this.votingId = res.events[0].args[0];
+	    this.log("[START] done votingId=",this.votingId);
+	    this.roll = new rollup.Rollup(BigInt(this.votingId), this.rollupBatchSize,this.rollupLevels);
 	}
 
 	async rollup(votes) {
@@ -91,8 +111,9 @@ class RollupServer {
 	    this.log("[ROLLUP] generating proof");
 	    let input = await this.roll.rollup(votes);
 	    let proof = await snarkjs.groth16.fullProve(input,this.rollupWasmFile,this.rollupZkeyFile /*, new logger()*/ );
-	  
+	 
 	    let tx = await this.rollupContract.collect(
+		this.votingId,
 		this.b256(input.newNullifiersRoot),
 		input.result,
 		input.nVotes,
@@ -123,15 +144,17 @@ class RollupServer {
 	}
 
 	async _challange(rollEntriesNew, bbjPbk, ethAddress) {
-	   this.log("[CHALLANGE] generating proof addr ",bbjPbk);	
-	 
+	   this.log("[CHALLANGE] generating...");	
+	
 	   // create new rollup with the entries
 	   let roll = new rollup.Rollup(this.rollupBatchSize, this.rollupLevels);
 	   await roll.insert(this.rollEntries);
 	   await roll.insert(rollEntriesNew);
 
 	   // check if the nullifier root is ok
-	   const root = BigInt(await this.rollupContract.nullifierRoot());
+	   const voting = await this.rollupContract.votings(this.votingId);
+	   
+	   const root = BigInt(voting.nullifierRoot);
 	   if (root != roll.nullifiers.root) {
 	       throw  "UNABLE TO CHALLANGE, ROOT IS NOT UPDATED";
 	   }
@@ -148,7 +171,12 @@ class RollupServer {
 		erc20StorageProof = await this._getERC20StorageProof(ethAddress);
 	   }
 
-	   let tx = await this.rollupContract.challange(
+           let challangeInput = [
+		this.tokenAddress,
+		this.tokenSlot,
+		this.tokenBlockNumber,
+		this.tokenBlockHash,
+
 		bbjPbk,
 		bbjStorageProof.blockHeaderRLP,
 		
@@ -161,16 +189,24 @@ class RollupServer {
 		[ proof.proof.pi_a[0], proof.proof.pi_a[1] ],
 		[ [proof.proof.pi_b[0][1],proof.proof.pi_b[0][0]],[proof.proof.pi_b[1][1],proof.proof.pi_b[1][0]] ],
 		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
-	    );
-	    this.log("[CHALLANGE] sending tx...", tx.hash);
+	   ];
+
+	console.log(challangeInput);
+
+	   let tx = await this.rollupContract.challange(challangeInput);
+	   this.log("[CHALLANGE] sending tx...", tx.hash);
 	    
-	    let res = await tx.wait();
-	    this.log("[CHALLANGE] challanged ", res.logs[0]);
+	   let res = await tx.wait();
+	   this.log("[CHALLANGE] challanged ", res.logs[0]);
 	}
 
 	async startListenAndChallange() {
 		this.log("[CHALLANGER] start listening....");
-		this.rollupContract.on("Voted", async (count, voters) => {
+		this.rollupContract.on("Voted", async (votingId, count, voters) => {
+			if (votingId != this.votingId) {
+				this.log("[CHALLANGER] ignoring votingId", votingId, "!=", this.votingId);
+				return;
+			}
 			this.log("[CHALLANGER] verifying votes ", voters.map(n => n.toString()));
 			
 			//  get new nullifiers

@@ -12,7 +12,8 @@ template VoteRollup(nBatchSize, nLevels) {
 
 	// this will be the inputs of the smartcontract verifier method
 	signal private input newNullifiersRoot;
-	signal private input result;
+	signal private input electionId;
+        signal private input result;
 	signal private input nVotes;
 	signal private input votePbkAx[nBatchSize]; 
 
@@ -29,7 +30,7 @@ template VoteRollup(nBatchSize, nLevels) {
     	
 	/// check sha256 of inputs ------------------------------------------------
 	var offset = 0;
-	component inputsHasher = Sha256(256 * (4 + nBatchSize));
+	component inputsHasher = Sha256(256 * (5 + nBatchSize));
 
     	component n2bOldNullifiersRoot = Num2Bits(256);
 	n2bOldNullifiersRoot.in <== oldNullifiersRoot;
@@ -44,18 +45,25 @@ template VoteRollup(nBatchSize, nLevels) {
         	inputsHasher.in[offset + b] <== n2bNewNullifiersRoot.out[255-b];
     	}
 	offset += 256;
-
+	
     	component n2bResult = Num2Bits(256);
 	n2bResult.in <== result;
 	for (var b = 0; b < 256; b++) {
         	inputsHasher.in[offset + b] <== n2bResult.out[255-b];
     	}
 	offset += 256;
-	
+	 	
    	component n2bVotes = Num2Bits(256);
 	n2bVotes.in <== nVotes;
 	for (var b = 0; b < 256; b++) {
         	inputsHasher.in[offset + b] <== n2bVotes.out[255-b];
+    	}
+	offset += 256;
+
+   	component n2bElectionId = Num2Bits(256);
+	n2bElectionId.in <== electionId;
+	for (var b = 0; b < 256; b++) {
+        	inputsHasher.in[offset + b] <== n2bElectionId.out[255-b];
     	}
 	offset += 256;
         	
@@ -68,7 +76,7 @@ template VoteRollup(nBatchSize, nLevels) {
 		}
 		offset += 256
 	}
-        	
+
    	component b2nHashInputsOut = Bits2Num(256);
 	for (var i = 0; i < 256; i++) {
         	b2nHashInputsOut.in[i] <== inputsHasher.out[255-i];
@@ -84,6 +92,7 @@ template VoteRollup(nBatchSize, nLevels) {
 	component verify[nBatchSize];
 	component isLast[nBatchSize];
 	component lastRootEqual[nBatchSize];
+	component voteSignedValue[nBatchSize];
 	
 	for (var i=0; i<nBatchSize; i++) {
 		verify[i] = LessThan(32);
@@ -96,6 +105,11 @@ template VoteRollup(nBatchSize, nLevels) {
 
 		/// verify vote signature
 		////////////////
+
+		voteSignedValue[i] = Poseidon(2);
+		voteSignedValue[i].inputs[0] <== electionId;	
+		voteSignedValue[i].inputs[1] <== voteValue[i];
+
 		sigVerification[i] = EdDSAPoseidonVerifier();
 		sigVerification[i].enabled <==  verify[i].out;
 		sigVerification[i].Ax <== votePbkAx[i];
@@ -103,11 +117,10 @@ template VoteRollup(nBatchSize, nLevels) {
 		sigVerification[i].S <== voteSigS[i];
 		sigVerification[i].R8x <== voteSigR8x[i];
 		sigVerification[i].R8y <== voteSigR8y[i];
-		sigVerification[i].M <== voteValue[i];
+		sigVerification[i].M <== voteSignedValue[i].out;
 
 		/// verify addition into nullifier tree
 	 	////////////////	
-
 		processor[i] = SMTProcessor(nLevels+1);
 		
 		if (i==0) {
@@ -130,6 +143,7 @@ template VoteRollup(nBatchSize, nLevels) {
 		lastRootEqual[i].enabled <== isLast[i].out;
 		lastRootEqual[i].in[0] <== processor[i].newRoot;
 		lastRootEqual[i].in[1] <== newNullifiersRoot;
+		
 		computedResult = computedResult + voteValue[i];
 	}
 
