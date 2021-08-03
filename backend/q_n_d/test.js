@@ -54,9 +54,16 @@ async function start() {
 	await server.deployVoting(server.registryContract.address, TOKEN_ADDR, TOKEN_SLOT);
 	*/
 
-	// await server.deployVoting("0x4D48691a887Bd6e1E2D4311cdDe506A4cCA2690C");
-	await server.attach("0xfddf6F0B615180374fd25ab25a10eD28D9a07eE1");
-	console.log(await server.start(TOKEN_ADDR, TOKEN_SLOT));
+	await server.deployVoting("0x4D48691a887Bd6e1E2D4311cdDe506A4cCA2690C");
+        /*
+	console.log("challange1");
+	let tx = await server.rollupContract.challange1( [ "0xc6b0562605D35eE710138402B878ffe6F2E23807" ] );	
+        await tx.wait();
+	console.log("done");
+	*/
+	// await server.attach("0xfddf6F0B615180374fd25ab25a10eD28D9a07eE1");
+	
+	await server.start(TOKEN_ADDR, TOKEN_SLOT);
 
 	let vote1 = voter1.vote(BigInt(server.votingId), 1n);
 	let vote2 = voter2.vote(BigInt(server.votingId), 2n);
@@ -71,8 +78,8 @@ async function start() {
 	await watchdog.attachVotingId(server.votingId, server.tokenAddress, server.tokenSlot, server.tokenBlockNumber, server.tokenBlockHash);
 	await watchdog.startListenAndChallange();
 	
+	await server.rollup([vote1]);
 	await server.rollup([vote4]);
-	//await server.rollup([vote1]);
 	let voting = await server.rollupContract.votings(server.votingId); 
 	console.log("result=",voting.result);
 	await new Promise(r => setTimeout(r, 100000));

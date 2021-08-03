@@ -64,6 +64,7 @@ class RollupServer {
 	    this.votingId = votingId;
 	    this.log("[ATTACH-VOTINGID] votingId=",this.votingId);
 	    this.roll = new rollup.Rollup(BigInt(this.votingId), this.rollupBatchSize,this.rollupLevels);
+	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
 	}
 
 	async deployRegistry() {
@@ -94,10 +95,10 @@ class RollupServer {
 	    this.tokenSlot = slotId;
 	    this.tokenBlockNumber = Number(res.events[0].args[3]);
 	    this.tokenBlockHash = res.events[0].args[4];
-	    console.log("tokenBlockHash", this.tokenBlockHash);
 	    this.votingId = res.events[0].args[0];
 	    this.log("[START] done votingId=",this.votingId);
 	    this.roll = new rollup.Rollup(BigInt(this.votingId), this.rollupBatchSize,this.rollupLevels);
+	    this.tokenERC20 = new ethers.Contract(this.tokenAddress, ERC20ContractABI, this.wallet);
 	}
 
 	async rollup(votes) {
@@ -147,13 +148,12 @@ class RollupServer {
 	   this.log("[CHALLANGE] generating...");	
 	
 	   // create new rollup with the entries
-	   let roll = new rollup.Rollup(this.rollupBatchSize, this.rollupLevels);
+	   let roll = new rollup.Rollup(this.votingId, this.rollupBatchSize, this.rollupLevels);
 	   await roll.insert(this.rollEntries);
 	   await roll.insert(rollEntriesNew);
 
 	   // check if the nullifier root is ok
 	   const voting = await this.rollupContract.votings(this.votingId);
-	   
 	   const root = BigInt(voting.nullifierRoot);
 	   if (root != roll.nullifiers.root) {
 	       throw  "UNABLE TO CHALLANGE, ROOT IS NOT UPDATED";
@@ -162,7 +162,6 @@ class RollupServer {
 	   // create proof-of-inclusion proof
 	   let input = await roll.smtkeyexists(bbjPbk);
 	   let proof = await snarkjs.groth16.fullProve(input,this.smtKeyExistsWasmFile,this.smtKeyExistsZkeyFile/*, new logger()*/ );
-
 	   // get the bbk => eth proof
 	   const bbjStorageProof = await this._getBbjStorageProof(bbjPbk);
 	   let erc20StorageProof = { blockHeaderRLP : "0x00", accountProofRLP : "0x00", storageProofsRLP : [ "0x00"] };
@@ -170,14 +169,13 @@ class RollupServer {
 		// get the erc20(eth) == 0 proof
 		erc20StorageProof = await this._getERC20StorageProof(ethAddress);
 	   }
-
            let challangeInput = [
 		this.tokenAddress,
-		this.tokenSlot,
+	        this.tokenSlot,
 		this.tokenBlockNumber,
 		this.tokenBlockHash,
-
 		bbjPbk,
+
 		bbjStorageProof.blockHeaderRLP,
 		
 		bbjStorageProof.accountProofRLP,
@@ -188,16 +186,13 @@ class RollupServer {
 		
 		[ proof.proof.pi_a[0], proof.proof.pi_a[1] ],
 		[ [proof.proof.pi_b[0][1],proof.proof.pi_b[0][0]],[proof.proof.pi_b[1][1],proof.proof.pi_b[1][0]] ],
-		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ],
+		[ proof.proof.pi_c[0], proof.proof.pi_c[1] ]
 	   ];
-
-	console.log(challangeInput);
-
 	   let tx = await this.rollupContract.challange(challangeInput);
 	   this.log("[CHALLANGE] sending tx...", tx.hash);
 	    
-	   let res = await tx.wait();
-	   this.log("[CHALLANGE] challanged ", res.logs[0]);
+	   await tx.wait();
+	   this.log("[CHALLANGE] challanged ");
 	}
 
 	async startListenAndChallange() {

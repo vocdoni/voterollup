@@ -1,6 +1,5 @@
 //SPDX-License-Identifier: Unlicense
-pragma solidity ^0.6.0;
-
+pragma solidity ^0.6.11;
 contract Registry {
   mapping(address=>uint256) public addr2bbj;
   mapping(uint256=>address) public bbj2addr;

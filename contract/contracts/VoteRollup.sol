@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: Unlicense
-pragma solidity ^0.6.0;
+pragma solidity ^0.6.11;
 pragma experimental ABIEncoderV2;
+//pragma abicoder v2;
 
 import { Verifier as RollupVerifier } from "../circuits/release/rollup.sol";
 import { Verifier as SMTKeyExistsVerifier } from "../circuits/release/smtkeyexists.sol";
@@ -68,42 +69,43 @@ contract VoteRollup {
   }
 
   struct ChallangeInput {
-	address _tokenAddress;
-	uint256 _balanceMappingPosition;
-	uint256 _blockNumber;
-	bytes32 _blockHash;
+	address tokenAddress;
+	uint256 balanceMappingPosition;
+	uint256 blockNumber;
+	bytes32 blockHash;
 
-	uint256 _bbjPbkX;
-	bytes   _blockHeaderRLP;
+	uint256 bbjPbkX;
+	bytes   blockHeaderRLP;
 	
-	bytes   _bbjAccountStateProof;
-	bytes   _bbjStorageProof;
+	bytes   bbjAccountStateProof;
+	bytes   bbjStorageProof;
 
-	bytes   _balanceAccountStateProof;
-	bytes   _balanceStorageProof;
-	uint[2] _proofA;
-	uint[2][2] _proofB;
-	uint[2] _proofC;
+	bytes   balanceAccountStateProof;
+	bytes   balanceStorageProof;
+	uint[2] proofA;
+	uint[2][2] proofB;
+	uint[2] proofC;
   }
 
   function challange(ChallangeInput calldata ci) external {
-     	bytes32 id = _votingIdOf(ci._tokenAddress, ci._balanceMappingPosition, ci._blockNumber, ci._blockHash); 
+	
+     	bytes32 id = _votingIdOf(ci.tokenAddress, ci.balanceMappingPosition, ci.blockNumber, ci.blockHash); 
 
 	// check that the header is valid
-	require(keccak256(ci._blockHeaderRLP) == ci._blockHash);
-
+	require(keccak256(ci.blockHeaderRLP) == ci.blockHash);
+	
 	// check if bbj voted
-        uint[2] memory inputValues = [ uint(votings[id].nullifierRoot) , uint(ci._bbjPbkX) ];
-	require(smtKeyExistsVerifier.verifyProof(ci._proofA, ci._proofB, ci._proofC, inputValues), "bbj-not-in-tree");
-
+        uint[2] memory inputValues = [ uint(votings[id].nullifierRoot) , ci.bbjPbkX ];
+	require(smtKeyExistsVerifier.verifyProof(ci.proofA, ci.proofB, ci.proofC, inputValues), "bbj-not-in-tree");
+        
 	// get the voter
         address voter = address(storageProof.getValueOf(
-		ci._bbjPbkX, 
+		ci.bbjPbkX, 
 		address(registry), 
 		1,
-		ci._blockHeaderRLP, 
-		ci._bbjAccountStateProof, 
-		ci._bbjStorageProof
+		ci.blockHeaderRLP, 
+		ci.bbjAccountStateProof, 
+		ci.bbjStorageProof
 	));
 
 	SlashReason reason;
@@ -116,18 +118,19 @@ contract VoteRollup {
 		// check that the voter do not have any token
 	        uint256 balance = storageProof.getERC20Balance(
 			voter, 
-			ci._tokenAddress, 
-			ci._balanceMappingPosition,
-			ci._blockHeaderRLP, 
-			ci._balanceAccountStateProof, 
-			ci._balanceStorageProof
+			ci.tokenAddress, 
+			ci.balanceMappingPosition,
+			ci.blockHeaderRLP, 
+			ci.balanceAccountStateProof, 
+			ci.balanceStorageProof
 		);
 		require(balance == 0);
 		reason = SlashReason.ZERO_BALANCE;
 	
 	}
 	slash(id,reason);
- }
+ 	 
+  }
 
   function slash(bytes32 _id, SlashReason challangeResason) internal {
 	votings[_id].nullifierRoot = SLASHED_ROOT;
