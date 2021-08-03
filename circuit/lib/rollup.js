@@ -86,7 +86,7 @@ class Rollup {
 	let result = 0n;
         input.voteNullifierSiblings = [];
 	for (var n = 0; n<votes.length;n++) {
-		assert(votes[n].voteElectionId == this.electionId);
+		assert(votes[n].voteElectionId == this.electionId, "bad electionId "+votes[n].voteElectionId+ " must "+this.electionId);
 		input.votePbkAx.push(votes[n].votePbkAx);
 		input.votePbkAy.push(votes[n].votePbkAy);
 		input.voteSigS.push(votes[n].voteSigS);
