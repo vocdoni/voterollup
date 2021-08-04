@@ -1,5 +1,6 @@
+const JSPROVER = false;
+
 const fs = require('fs');
-const rollup = require('../../circuit/lib/rollup.js');
 const snarkjs = require('snarkjs');
 const { ethers } = require("ethers");
 const path = require('path');
@@ -16,9 +17,11 @@ const { ERC20Prover } = require('@vocdoni/storage-proofs-eth');
 const ERC20ContractABI = require('./erc20.abi.json');
 const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
 const RegistryContract = require("../../contract/artifacts/contracts/Registry.sol/Registry.json");
+const rollup = require('../../circuit/lib/rollup.js');
 
-const JSPROVER = false;
 
+const ROLLUP_CIRCUIT = "../../contract/circuits/rollup.circom";
+const SMTKEYEXISTS_CIRCUIT = "../../contract/circuits/smtkeyexists.circom";
 const CIRCUIT_PATH="../../contract/circuits/release";
 const PROVER_BIN="prover/rapidsnark/build/prover";
 const WITGEN_BIN_PATH="prover";
@@ -68,6 +71,16 @@ class RollupServer {
 		if (log === undefined ) {
 			log = console.log;
 		}
+		let [, rollupBatchSize, rollupLevels] = fs.readFileSync(ROLLUP_CIRCUIT,'utf8').match(/VoteRollup\(([0-9]*),([0-9]*)\)/);
+		let [, smtKeyExstLevels] = fs.readFileSync(SMTKEYEXISTS_CIRCUIT,'utf8').match(/SMTKeyExists\(([0-9]*)\)/);
+
+		this.rollupBatchSize = parseInt(rollupBatchSize);
+		this.rollupLevels = parseInt(rollupLevels); 
+	
+		if (this.rollupBatchSize < 1 || this.rollupLevels < 1 || this.rollupLevels != parseInt(smtKeyExstLevels)) {
+			throw "Cannot get the contents of the rollup circuits";
+		}
+
 		this.log = log;
 		this.web3Url = web3url;
 		this.provider = new ethers.providers.JsonRpcProvider(this.web3Url);
@@ -81,11 +94,10 @@ class RollupServer {
 		this.tokenBlockHash = null;
 		this.tokenERC20 = null;
 		this.rollupContract = null;
-		this.rollupBatchSize = 4;
-		this.rollupLevels = 10; 
 		this.roll = null;
 		this.rollEntries = []
 		this.registryContract = null;
+		log("Loaded engine for BATCHSIZE=",this.rollupBatchSize, "LEVELS=", this.rollupLevels);
 	}
 
 	b256(n) {
