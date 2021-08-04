@@ -4,7 +4,8 @@ const snarkjs = require('snarkjs');
 const { ethers } = require("ethers");
 const path = require('path');
 const solc = require('solc');
-const exec = require("child_process").exec
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 const tmp = require('tmp');
 
 class logger {
@@ -16,14 +17,18 @@ const ERC20ContractABI = require('./erc20.abi.json');
 const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
 const RegistryContract = require("../../contract/artifacts/contracts/Registry.sol/Registry.json");
 
+const JSPROVER = false;
+
 const CIRCUIT_PATH="../../contract/circuits/release";
-const BIN_PATH="";
+const PROVER_BIN="prover/rapidsnark/build/prover";
+const WITGEN_BIN_PATH="prover";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 class ZKProver {
-	constructor(js, circuit) {
+	constructor(js, circuit, log) {
 		this.circuit = circuit; 
 		this.js = js;
+		this.log = log;
 	}
 	async prove(input) {
 		if (this.js) {
@@ -33,14 +38,26 @@ class ZKProver {
 				/*, new logger()*/ 
 			);
 		} else {
-			const prefix = tmp.fileSync({ mode: 0o644, prefix: this.circuit+'-'});
-			const input = prefix+".input.json";
-			const wtns = prefix + ".wtns";
-			const proof = prefix + ".proof.json";
-			const pblic = prefix + ".public.json";
+			const prefix = tmp.fileSync({ mode: 0o644, prefix: this.circuit+'-'}).name;
+			const inputsFile = prefix+".input.json";
+			const wtnsFile = prefix + ".wtns";
+			const proofFile = prefix + ".proof.json";
+			const publicInputsFile = prefix + ".public.json";
+		        // this.log("Writing circuit ",this.circuit," inputs to ",inputsFile); 
+			input = JSON.stringify(input, (k,v) => typeof v === "bigint" ? v.toString() : v )
+			fs.writeFileSync(inputsFile, input);
 
-			exec(`${BIN_PATH}/${this.circuit} ${input} ${wtns}`);
-			exec(`${BIN_PATH}/prover ${this.circuit}.zkey ${wtns} ${proof} ${pblic}`);
+			const genWitnessCmd = `${WITGEN_BIN_PATH}/${this.circuit} ${inputsFile} ${wtnsFile}`;
+			// this.log("Running \'"+genWitnessCmd+"\'...");
+			await exec(genWitnessCmd);
+			
+			const proveCmd = `${PROVER_BIN} ${CIRCUIT_PATH}/${this.circuit}.zkey ${wtnsFile} ${proofFile} ${publicInputsFile}`;
+			// this.log("Running \'"+proveCmd+"\'...");
+			await exec(proveCmd);
+		
+			let proof = fs.readFileSync(proofFile); 
+		 	proof = JSON.parse(proof, (k,v) => typeof v === "string" && v!= "groth16" ? BigInt(v) : v) ;
+			return { proof : proof };
 		}
 	}
 }
@@ -55,8 +72,8 @@ class RollupServer {
 		this.web3Url = web3url;
 		this.provider = new ethers.providers.JsonRpcProvider(this.web3Url);
 		this.wallet = new ethers.Wallet(walletPvk, this.provider)    
-		this.rollupProver = new ZKProver(true, "../../contract/circuits/release","rollup");	
-		this.smtKeyExistsProver = new ZKProver(true, "../../contract/circuits/release","smtkeyexists");	
+		this.rollupProver = new ZKProver(JSPROVER, "rollup", log);	
+		this.smtKeyExistsProver = new ZKProver(JSPROVER, "smtkeyexists", log);	
 		this.votingId = null;
 		this.tokenAddress = null;
 		this.tokenSlot= null;
@@ -174,7 +191,7 @@ class RollupServer {
 	}
 
 	async _challange(rollEntriesNew, bbjPbk, ethAddress) {
-	   this.log("[CHALLANGE] generating...");	
+	   this.log("[CHALLANGE] generating challange...");	
 	
 	   // create new rollup with the entries
 	   let roll = new rollup.Rollup(this.votingId, this.rollupBatchSize, this.rollupLevels);
@@ -189,7 +206,7 @@ class RollupServer {
 	   }
 
 	   // create proof-of-inclusion proof
-	   let input = await roll.smtkeyexists(bbjPbk);
+	   let input = await roll.smtkeyexists(BigInt(bbjPbk.toString()));
 	   let proof = await this.smtKeyExistsProver.prove(input);
 
 	   // get the bbk => eth proof
