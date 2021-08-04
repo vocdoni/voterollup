@@ -4,6 +4,9 @@ const snarkjs = require('snarkjs');
 const { ethers } = require("ethers");
 const path = require('path');
 const solc = require('solc');
+const exec = require("child_process").exec
+const tmp = require('tmp');
+
 class logger {
    debug(info) { console.log(info); } 
 }
@@ -13,7 +16,34 @@ const ERC20ContractABI = require('./erc20.abi.json');
 const VoteRollupContract = require("../../contract/artifacts/contracts/VoteRollup.sol/VoteRollup.json");
 const RegistryContract = require("../../contract/artifacts/contracts/Registry.sol/Registry.json");
 
+const CIRCUIT_PATH="../../contract/circuits/release";
+const BIN_PATH="";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+class ZKProver {
+	constructor(js, circuit) {
+		this.circuit = circuit; 
+		this.js = js;
+	}
+	async prove(input) {
+		if (this.js) {
+			return await snarkjs.groth16.fullProve(input,
+				CIRCUIT_PATH+"/"+this.circuit+".wasm",
+				CIRCUIT_PATH+"/"+this.circuit+".zkey"
+				/*, new logger()*/ 
+			);
+		} else {
+			const prefix = tmp.fileSync({ mode: 0o644, prefix: this.circuit+'-'});
+			const input = prefix+".input.json";
+			const wtns = prefix + ".wtns";
+			const proof = prefix + ".proof.json";
+			const pblic = prefix + ".public.json";
+
+			exec(`${BIN_PATH}/${this.circuit} ${input} ${wtns}`);
+			exec(`${BIN_PATH}/prover ${this.circuit}.zkey ${wtns} ${proof} ${pblic}`);
+		}
+	}
+}
 
 class RollupServer {
 
@@ -25,10 +55,8 @@ class RollupServer {
 		this.web3Url = web3url;
 		this.provider = new ethers.providers.JsonRpcProvider(this.web3Url);
 		this.wallet = new ethers.Wallet(walletPvk, this.provider)    
-		this.rollupWasmFile = "../../contract/circuits/release/rollup.wasm";	
-		this.rollupZkeyFile = "../../contract/circuits/release/rollup.zkey";
-		this.smtKeyExistsWasmFile = "../../contract/circuits/release/smtkeyexists.wasm";	
-		this.smtKeyExistsZkeyFile = "../../contract/circuits/release/smtkeyexists.zkey";
+		this.rollupProver = new ZKProver(true, "../../contract/circuits/release","rollup");	
+		this.smtKeyExistsProver = new ZKProver(true, "../../contract/circuits/release","smtkeyexists");	
 		this.votingId = null;
 		this.tokenAddress = null;
 		this.tokenSlot= null;
@@ -110,8 +138,9 @@ class RollupServer {
 	    }
 
 	    this.log("[ROLLUP] generating proof");
+	    
 	    let input = await this.roll.rollup(votes);
-	    let proof = await snarkjs.groth16.fullProve(input,this.rollupWasmFile,this.rollupZkeyFile /*, new logger()*/ );
+	    let proof = await this.rollupProver.prove(input);
 	 
 	    let tx = await this.rollupContract.collect(
 		this.votingId,
@@ -161,7 +190,8 @@ class RollupServer {
 
 	   // create proof-of-inclusion proof
 	   let input = await roll.smtkeyexists(bbjPbk);
-	   let proof = await snarkjs.groth16.fullProve(input,this.smtKeyExistsWasmFile,this.smtKeyExistsZkeyFile/*, new logger()*/ );
+	   let proof = await this.smtKeyExistsProver.prove(input);
+
 	   // get the bbk => eth proof
 	   const bbjStorageProof = await this._getBbjStorageProof(bbjPbk);
 	   let erc20StorageProof = { blockHeaderRLP : "0x00", accountProofRLP : "0x00", storageProofsRLP : [ "0x00"] };

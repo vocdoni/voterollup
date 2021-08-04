@@ -10,7 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "@vocdoni/storage-proofs-eth": "github:vocdoni/storage-proofs-eth-js#f/proof-non-existence",
-    "voterollup": "file:../../circuit",
     "async-mutex": "^0.3.1",
     "circom": "^0.5.45",
     "circom_runtime": "^0.1.12",
@@ -20,6 +19,8 @@
     "morgan": "^1.10.0",
     "snarkjs": "^0.4.6",
     "solc": "^0.6.12",
+    "tmp": "^0.1.0",
+    "voterollup": "file:../../circuit",
     "webpack": "^5.45.1"
   },
   "devDependencies": {
