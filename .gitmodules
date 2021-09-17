@@ -1,0 +1,6 @@
+[submodule "backend/q_n_d/prover/rapidsnark"]
+	path = backend/q_n_d/prover/rapidsnark
+	url = https://github.com/iden3/rapidsnark
+[submodule "backend/q_n_d/prover/circom_runtime"]
+	path = backend/q_n_d/prover/circom_runtime
+	url = https://github.com/iden3/circom_runtime
