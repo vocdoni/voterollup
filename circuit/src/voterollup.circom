@@ -85,7 +85,8 @@ template VoteRollup(nBatchSize, nLevels) {
 
 	/// check votes -------------------------------------------------------------- 
 	
-        var computedResult = 0;
+	signal computedResult[nBatchSize+1];
+	computedResult[0] <== 0;
 	
 	component sigVerification[nBatchSize];
 	component processor[nBatchSize];
@@ -144,9 +145,8 @@ template VoteRollup(nBatchSize, nLevels) {
 		lastRootEqual[i].in[0] <== processor[i].newRoot;
 		lastRootEqual[i].in[1] <== newNullifiersRoot;
 		
-		computedResult = computedResult + voteValue[i];
+		computedResult[i+1] <== computedResult[i] + voteValue[i] * verify[i].out;
 	}
 
-	result === computedResult;
-		
+	result === computedResult[nBatchSize];
 }
